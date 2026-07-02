@@ -9,7 +9,7 @@ The current e2e parity fixtures cover:
 - `ch_en_num.jpg`
 - `text_det.jpg`
 - `ch_en_num.jpg` and `text_det.jpg` as detection-only geometry checks
-- `check_return_word_len.jpeg` as a dense-text detection-only geometry check
+- `check_return_word_len.jpeg` with cls enabled, cls disabled, and detection-only as dense-text checks with local text tolerance
 - `arabic.png`, `cyrillic.png`, `devanagari.jpg`, `japan.jpg`, and `korean.jpg` as cross-language detection-only geometry checks
 - `ta.png`, `th_rec.jpg`, `te.png`, and `eslav.jpg` as additional script/layout detection-only geometry checks
 - `te.png` with cls enabled and disabled as a default-model full-pipeline parity check
@@ -41,6 +41,7 @@ Current representative metrics:
 - `ch_en_num.jpg` and `text_det.jpg`: 18/18 lines matched, character accuracy about 0.976, mean center drift about 1.23 px.
 - `ch_en_num.jpg` and `text_det.jpg` detection-only: 18/18 boxes matched, mean center drift about 1.23 px, mean corner drift about 1.45 px.
 - `check_return_word_len.jpeg` detection-only: 28/28 boxes matched, mean center drift about 0.58 px, mean corner drift about 0.92 px.
+- `check_return_word_len.jpeg` full e2e: cls enabled and disabled both match 28/28 lines with local text tolerances; cls has exact text ratio about 0.57 and char accuracy about 0.939, no-cls has exact text ratio about 0.61 and char accuracy about 0.943.
 - Cross-language detection-only: `arabic.png` 2/2, `cyrillic.png` 4/4, `devanagari.jpg` 4/4, `japan.jpg` 7/7, and `korean.jpg` 6/6 boxes matched with mean center drift below 0.70 px.
 - `en.jpg`: 5/5 lines matched, exact text match, mean center drift about 0.21 px.
 - `empty_black.jpg`: 0/0 lines matched.
@@ -186,16 +187,17 @@ Current candidate behavior:
 
 - The image is now a strict detection-only geometry gate: 28/28 boxes matched, mean center drift about 0.58 px, and mean corner drift about 0.92 px.
 - It is also now a strict DBPostProcess gate: 28/28 candidates matched, mean center drift about 0.63 px, and mean corner drift about 0.94 px.
-- Text parity is not strict enough yet: exact text ratio about 0.57 and character accuracy about 0.934, below the current global 0.96 gate.
+- Full-pipeline cls and no-cls fixtures are now strict gates with local text tolerances: `min_exact_text_ratio` 0.55 and `min_char_accuracy` 0.93.
+- Text parity remains below the global gate: cls exact text ratio is about 0.57 with character accuracy about 0.939, and no-cls exact text ratio is about 0.61 with character accuracy about 0.943.
 
 Impact:
 
-- Detection layout is close enough to be useful, but recognition drift across many dense small text lines would make it a weak strict e2e gate.
-- The detection-only and DBPostProcess fixtures protect the stable layout behavior while recognition remains out of the strict gate.
+- Detection layout is close enough to be useful, and the full-pipeline fixtures now protect dense-text behavior without pretending it meets the global text parity gate.
+- The local text tolerance keeps this as a regression gate for the current default-model behavior while preserving the known recognition drift as a documented difference.
 
 Next step:
 
-- Use this image while investigating dense small-text recognition differences, then promote it once text parity improves or a focused tolerance is justified.
+- Tighten or remove the local text tolerance if dense small-text recognition parity improves.
 
 ### Language-Specific Recognition Crops
 

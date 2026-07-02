@@ -122,6 +122,18 @@ def default_cases() -> list[E2eCase]:
         E2eCase("text_det_cls", Path("python/tests/test_files/text_det.jpg"), full_pipeline(True)),
         E2eCase("text_det_no_cls", Path("python/tests/test_files/text_det.jpg"), full_pipeline(False)),
         E2eCase("text_det_det_only", Path("python/tests/test_files/text_det.jpg"), det_only_pipeline()),
+        E2eCase(
+            "check_return_word_len_cls",
+            Path("python/tests/test_files/check_return_word_len.jpeg"),
+            full_pipeline(True),
+            {"min_exact_text_ratio": 0.55, "min_char_accuracy": 0.93},
+        ),
+        E2eCase(
+            "check_return_word_len_no_cls",
+            Path("python/tests/test_files/check_return_word_len.jpeg"),
+            full_pipeline(False),
+            {"min_exact_text_ratio": 0.55, "min_char_accuracy": 0.93},
+        ),
         E2eCase("check_return_word_len_det_only", Path("python/tests/test_files/check_return_word_len.jpeg"), det_only_pipeline()),
         E2eCase("arabic_det_only", Path("python/tests/test_files/arabic.png"), det_only_pipeline()),
         E2eCase("cyrillic_det_only", Path("python/tests/test_files/cyrillic.png"), det_only_pipeline()),

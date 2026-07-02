@@ -121,7 +121,7 @@ Status: in progress.
 Current strict e2e coverage:
 
 - `ch_en_num.jpg` and `text_det.jpg` with cls enabled, cls disabled, and detection-only.
-- `check_return_word_len.jpeg` as a dense-text detection-only geometry check.
+- `check_return_word_len.jpeg` with cls enabled, cls disabled, and detection-only as dense-text checks with documented local text tolerance.
 - `arabic.png`, `cyrillic.png`, `devanagari.jpg`, `japan.jpg`, and `korean.jpg` as cross-language detection-only geometry checks.
 - `ta.png`, `th_rec.jpg`, `te.png`, and `eslav.jpg` as additional script/layout detection-only geometry checks.
 - `te.png` with cls enabled and disabled as a default-model full-pipeline parity check.
@@ -213,7 +213,7 @@ Tasks:
 - Done: full-pipeline `eslav.jpg` cls/no-cls fixtures with a local score-drift gate while text and geometry remain strict.
 - In progress: add regression fixtures for DBPostProcess edge cases:
   - Done: empty images
-  - Partial: dense small text; `ch_doc_server.png` is an e2e cls, detection-only, and DBPostProcess gate, `check_return_word_len.jpeg` is a detection-only and DBPostProcess gate, while no-cls text and `check_return_word_len.jpeg` text accuracy remain documented gaps.
+  - Partial: dense small text; `ch_doc_server.png` is an e2e cls, detection-only, and DBPostProcess gate, and `check_return_word_len.jpeg` is now a cls/no-cls e2e, detection-only, and DBPostProcess gate with local text tolerance. The remaining dense/tiny-text gap is `ch_doc_server.png` no-cls text drift.
   - Done: vertical text
   - Done: slanted text
   - Done: Latin and EXIF-oriented DBPostProcess layout fixtures.

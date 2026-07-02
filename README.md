@@ -211,7 +211,7 @@ The current e2e fixtures cover:
 
 - `ch_en_num.jpg` with cls enabled, cls disabled, and detection-only.
 - `text_det.jpg` with cls enabled, cls disabled, and detection-only.
-- `check_return_word_len.jpeg` as a dense-text detection-only geometry check.
+- `check_return_word_len.jpeg` with cls enabled, cls disabled, and detection-only as dense-text checks with documented local text tolerance.
 - `arabic.png`, `cyrillic.png`, `devanagari.jpg`, `japan.jpg`, and `korean.jpg` as cross-language detection-only geometry checks.
 - `ta.png`, `th_rec.jpg`, `te.png`, and `eslav.jpg` as additional script/layout detection-only geometry checks.
 - `te.png` with cls enabled and disabled as a default-model full-pipeline parity check.
