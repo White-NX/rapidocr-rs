@@ -1,0 +1,56 @@
+{
+  "source": "python-rapidocr",
+  "image": "python/tests/test_files/arabic.png",
+  "use_cls": false,
+  "lines": [
+    {
+      "bbox": [
+        [
+          19.0,
+          7.0
+        ],
+        [
+          206.0,
+          4.0
+        ],
+        [
+          208.0,
+          79.0
+        ],
+        [
+          20.0,
+          81.0
+        ]
+      ],
+      "text": "",
+      "score": 0.0
+    },
+    {
+      "bbox": [
+        [
+          181.0,
+          13.0
+        ],
+        [
+          313.0,
+          7.0
+        ],
+        [
+          316.0,
+          77.0
+        ],
+        [
+          184.0,
+          83.0
+        ]
+      ],
+      "text": "",
+      "score": 0.0
+    }
+  ],
+  "pipeline": {
+    "use_det": true,
+    "use_cls": false,
+    "use_rec": false
+  }
+}

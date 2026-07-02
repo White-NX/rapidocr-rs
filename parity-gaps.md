@@ -9,6 +9,8 @@ The current e2e parity fixtures cover:
 - `ch_en_num.jpg`
 - `text_det.jpg`
 - `ch_en_num.jpg` and `text_det.jpg` as detection-only geometry checks
+- `check_return_word_len.jpeg` as a dense-text detection-only geometry check
+- `arabic.png`, `cyrillic.png`, `devanagari.jpg`, `japan.jpg`, and `korean.jpg` as cross-language detection-only geometry checks
 - `en.jpg`
 - `empty_black.jpg`
 - `short.png`
@@ -31,6 +33,8 @@ Current representative metrics:
 
 - `ch_en_num.jpg` and `text_det.jpg`: 18/18 lines matched, character accuracy about 0.976, mean center drift about 1.23 px.
 - `ch_en_num.jpg` and `text_det.jpg` detection-only: 18/18 boxes matched, mean center drift about 1.23 px, mean corner drift about 1.45 px.
+- `check_return_word_len.jpeg` detection-only: 28/28 boxes matched, mean center drift about 0.58 px, mean corner drift about 0.92 px.
+- Cross-language detection-only: `arabic.png` 2/2, `cyrillic.png` 4/4, `devanagari.jpg` 4/4, `japan.jpg` 7/7, and `korean.jpg` 6/6 boxes matched with mean center drift below 0.70 px.
 - `en.jpg`: 5/5 lines matched, exact text match, mean center drift about 0.21 px.
 - `empty_black.jpg`: 0/0 lines matched.
 - `short.png`: 0/0 lines matched.
@@ -140,12 +144,13 @@ Observed on `check_return_word_len.jpeg`.
 
 Current candidate behavior:
 
-- Candidate e2e metrics matched Python's 28 detected lines and had stable geometry: mean center drift about 0.58 px and mean corner drift about 0.92 px.
+- The image is now a strict detection-only geometry gate: 28/28 boxes matched, mean center drift about 0.58 px, and mean corner drift about 0.92 px.
 - Text parity is not strict enough yet: exact text ratio about 0.57 and character accuracy about 0.934, below the current global 0.96 gate.
 
 Impact:
 
 - Detection layout is close enough to be useful, but recognition drift across many dense small text lines would make it a weak strict e2e gate.
+- The detection-only fixture protects the stable layout behavior while recognition remains out of the strict gate.
 
 Next step:
 

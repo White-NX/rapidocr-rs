@@ -121,6 +121,8 @@ Status: in progress.
 Current strict e2e coverage:
 
 - `ch_en_num.jpg` and `text_det.jpg` with cls enabled, cls disabled, and detection-only.
+- `check_return_word_len.jpeg` as a dense-text detection-only geometry check.
+- `arabic.png`, `cyrillic.png`, `devanagari.jpg`, `japan.jpg`, and `korean.jpg` as cross-language detection-only geometry checks.
 - `en.jpg` and `latin.jpg` with cls enabled and disabled.
 - `empty_black.jpg` and `short.png` with cls enabled and disabled.
 - `black_font_color_transparent.png` with cls enabled and disabled for transparent-background handling.
@@ -167,6 +169,12 @@ Tasks:
 - Done for detection-only e2e fixtures:
   - `ch_en_num.jpg`
   - `text_det.jpg`
+  - `check_return_word_len.jpeg`
+  - `arabic.png`
+  - `cyrillic.png`
+  - `devanagari.jpg`
+  - `japan.jpg`
+  - `korean.jpg`
   - count and geometry are gated without recognition text/score checks
 - In progress: add regression fixtures for DBPostProcess edge cases:
   - Done: empty images
