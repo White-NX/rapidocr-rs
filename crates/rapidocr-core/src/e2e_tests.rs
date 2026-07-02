@@ -69,7 +69,7 @@ fn e2e_output_tracks_golden_metrics() {
     let rs_root = rapidocr_rs_root();
     let model_dir = rs_root.join("models");
     let python_repo = python_repo_root(&rs_root);
-    let fixture_root = rs_root.join("fixtures").join("e2e");
+    let fixture_root = e2e_fixture_root(&rs_root);
     let mut executed = 0usize;
 
     for fixture_path in fixture_files(&fixture_root) {
@@ -320,6 +320,12 @@ fn validate_python_repo(path: PathBuf) -> PathBuf {
 
 fn resolve_python_asset(python_repo: &std::path::Path, fixture_image: &str) -> PathBuf {
     python_repo.join(fixture_image)
+}
+
+fn e2e_fixture_root(rs_root: &std::path::Path) -> PathBuf {
+    env::var_os("RAPIDOCR_E2E_FIXTURE_ROOT")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| rs_root.join("fixtures").join("e2e"))
 }
 
 fn fixture_files(root: &std::path::Path) -> Vec<PathBuf> {

@@ -180,6 +180,14 @@ Run the e2e metric test:
 cargo test -p rapidocr-core e2e_output_tracks_golden_metrics -- --nocapture
 ```
 
+To evaluate e2e candidates without committing them, export to a temporary directory and point the test at it:
+
+```powershell
+python .\tools\export_e2e_fixture.py --out-dir target\e2e_candidates --image python\tests\test_files\en_rec.jpg --pipeline rec-only
+$env:RAPIDOCR_E2E_FIXTURE_ROOT = "D:\projects\rapidocr-rs\target\e2e_candidates"
+cargo test -p rapidocr-core e2e_output_tracks_golden_metrics -- --nocapture
+```
+
 The current e2e fixtures cover:
 
 - `ch_en_num.jpg` with cls enabled and disabled.
@@ -196,6 +204,7 @@ The current e2e fixtures cover:
 - `text_vertical_words.png` with cls enabled and disabled.
 - `latin.jpg` with cls enabled and disabled.
 - `issue_170.png` with cls enabled and disabled.
+- `en_rec.jpg` recognition-only with cls enabled and disabled.
 - `text_rec.jpg` recognition-only with cls enabled and disabled.
 - `text_cls.jpg` recognition-only with cls enabled and disabled.
 - `text_cls.jpg` as a Rust golden for the cls/no-cls pipeline switch.

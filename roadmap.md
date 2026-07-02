@@ -130,6 +130,7 @@ Current strict e2e coverage:
 - `return_word_debug.jpg` with cls enabled for slanted text and digit-string recognition.
 - `text_vertical_words.png` with cls enabled and disabled.
 - `issue_170.png` with cls enabled and disabled; this fixture uses a documented local corner-drift tolerance.
+- `en_rec.jpg` as a recognition-only long English line cls/no-cls check.
 - `text_rec.jpg` as a recognition-only normal-crop cls/no-cls check.
 - `text_cls.jpg` as a recognition-only 180-degree cls/no-cls check.
 - `text_cls.jpg` as a Rust golden for the cls/no-cls pipeline switch.
@@ -165,7 +166,7 @@ Tasks:
   - `--no-cls` should preserve unrotated crops
 - In progress: add regression fixtures for DBPostProcess edge cases:
   - Done: empty images
-  - Partial: dense small text; `ch_doc_server.png` is an e2e cls gate, while no-cls text and DBPostProcess candidate-count parity remain documented gaps.
+  - Partial: dense small text; `ch_doc_server.png` is an e2e cls gate, while no-cls text, `check_return_word_len.jpeg` text accuracy, and DBPostProcess candidate-count parity remain documented gaps.
   - Done: vertical text
   - Done: slanted text
   - low contrast text

@@ -29,6 +29,19 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--model-dir", type=Path, default=Path("models"))
     parser.add_argument(
+        "--image",
+        type=Path,
+        action="append",
+        default=None,
+        help="Image path relative to the Python RapidOCR repo, or an absolute path. Custom images export cls and no-cls fixtures.",
+    )
+    parser.add_argument(
+        "--pipeline",
+        choices=["full", "rec-only"],
+        default="full",
+        help="Pipeline used with custom --image exports.",
+    )
+    parser.add_argument(
         "--out-dir",
         type=Path,
         default=Path("fixtures/e2e"),
@@ -55,7 +68,12 @@ def main() -> None:
         }
     )
 
-    for case in default_cases():
+    cases = (
+        custom_cases(args.image, python_repo, args.pipeline)
+        if args.image
+        else default_cases()
+    )
+    for case in cases:
         image_path = fixture_image_path(python_repo, case.image)
         result = engine(image_path, **case.pipeline)
         export_one(
@@ -73,6 +91,19 @@ def full_pipeline(use_cls: bool) -> dict[str, bool]:
 
 def rec_only_pipeline(use_cls: bool) -> dict[str, bool]:
     return {"use_det": False, "use_cls": use_cls, "use_rec": True}
+
+
+def custom_cases(images: list[Path], python_repo: Path, pipeline: str) -> list[E2eCase]:
+    cases = []
+    pipeline_fn = rec_only_pipeline if pipeline == "rec-only" else full_pipeline
+    for image in images:
+        image_path = fixture_image_path(python_repo, image)
+        name = image_path.stem.replace("-", "_")
+        display = Path(display_path(python_repo, image_path))
+        suffix = "rec_only_" if pipeline == "rec-only" else ""
+        cases.append(E2eCase(f"{name}_{suffix}cls", display, pipeline_fn(True)))
+        cases.append(E2eCase(f"{name}_{suffix}no_cls", display, pipeline_fn(False)))
+    return cases
 
 
 def default_cases() -> list[E2eCase]:
@@ -113,6 +144,8 @@ def default_cases() -> list[E2eCase]:
             full_pipeline(False),
             {"max_mean_corner_delta": 8.0},
         ),
+        E2eCase("en_rec_rec_only_cls", Path("python/tests/test_files/en_rec.jpg"), rec_only_pipeline(True)),
+        E2eCase("en_rec_rec_only_no_cls", Path("python/tests/test_files/en_rec.jpg"), rec_only_pipeline(False)),
         E2eCase("text_rec_rec_only_cls", Path("python/tests/test_files/text_rec.jpg"), rec_only_pipeline(True)),
         E2eCase("text_rec_rec_only_no_cls", Path("python/tests/test_files/text_rec.jpg"), rec_only_pipeline(False)),
         E2eCase("text_cls_rec_only_cls", Path("python/tests/test_files/text_cls.jpg"), rec_only_pipeline(True)),

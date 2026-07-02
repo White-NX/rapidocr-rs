@@ -19,6 +19,7 @@ The current e2e parity fixtures cover:
 - `text_vertical_words.png`
 - `latin.jpg`
 - `return_word_debug.jpg` with cls enabled
+- `en_rec.jpg` as a recognition-only cls/no-cls long English line check
 - `text_rec.jpg` as a recognition-only cls/no-cls normal-crop check
 - `text_cls.jpg` as a recognition-only cls/no-cls 180-degree crop check
 - `text_cls.jpg` as a Rust cls/no-cls golden
@@ -40,6 +41,7 @@ Current representative metrics:
 - `latin.jpg`: 1/1 line matched, exact text match.
 - `return_word_debug.jpg` with cls enabled: 5/5 lines matched, exact text match, mean center drift about 0.68 px.
 - `issue_170.png`: 1/1 line matched, exact text match; the fixture uses a local corner-drift tolerance of 8 px because the current Rust polygon corners differ slightly more than the global 6 px gate while the center and text remain stable.
+- `en_rec.jpg` recognition-only: cls enabled and disabled both match the long English line exactly.
 - `text_rec.jpg` recognition-only: cls enabled and disabled both recognize `韩国小馆`.
 - `text_cls.jpg`: cls enabled recognizes the rotated crop, `--no-cls` leaves it unrecognized.
 
@@ -129,6 +131,23 @@ Impact:
 Next step:
 
 - Investigate no-cls crop recognition drift and small candidate filtering before adding stricter variants.
+
+### Dense Document Text
+
+Observed on `check_return_word_len.jpeg`.
+
+Current candidate behavior:
+
+- Candidate e2e metrics matched Python's 28 detected lines and had stable geometry: mean center drift about 0.58 px and mean corner drift about 0.92 px.
+- Text parity is not strict enough yet: exact text ratio about 0.57 and character accuracy about 0.934, below the current global 0.96 gate.
+
+Impact:
+
+- Detection layout is close enough to be useful, but recognition drift across many dense small text lines would make it a weak strict e2e gate.
+
+Next step:
+
+- Use this image while investigating dense small-text recognition differences, then promote it once text parity improves or a focused tolerance is justified.
 
 ## Resolved Differences
 

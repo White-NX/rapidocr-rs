@@ -1,0 +1,17 @@
+{
+  "source": "python-rapidocr",
+  "image": "python/tests/test_files/en_rec.jpg",
+  "use_cls": false,
+  "pipeline": {
+    "use_det": false,
+    "use_cls": false,
+    "use_rec": true
+  },
+  "lines": [
+    {
+      "bbox": [[0.0, 0.0], [699.0, 0.0], [699.0, 29.0], [0.0, 29.0]],
+      "text": "To facilitate the shot type analysis in videos, we collect MovieShots, a large-scale",
+      "score": 0.99456
+    }
+  ]
+}
