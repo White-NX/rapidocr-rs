@@ -1,0 +1,6 @@
+{
+  "source": "python-rapidocr",
+  "image": "python/tests/test_files/short.png",
+  "use_cls": false,
+  "lines": []
+}

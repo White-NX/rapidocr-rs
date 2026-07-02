@@ -1,0 +1,16 @@
+{
+  "image": "python/tests/test_files/short.png",
+  "model_dir": "models",
+  "dest_shape": [
+    192,
+    32
+  ],
+  "pred_shape": [
+    1,
+    1,
+    736,
+    4416
+  ],
+  "boxes": [],
+  "scores": []
+}

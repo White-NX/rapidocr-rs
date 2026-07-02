@@ -436,7 +436,7 @@ fn sort_candidates(mut boxes: Vec<DetCandidate>) -> Vec<DetCandidate> {
 
 #[cfg(test)]
 mod tests {
-    use std::{fs, path::PathBuf};
+    use std::{env, fs, path::PathBuf};
 
     use ndarray::ArrayD;
     use ndarray_npy::read_npy;
@@ -593,11 +593,15 @@ mod tests {
     }
 
     fn fixture_dirs() -> Vec<PathBuf> {
-        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("..")
-            .join("..")
-            .join("fixtures")
-            .join("db_postprocess");
+        let root = env::var_os("RAPIDOCR_DB_FIXTURE_ROOT")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| {
+                PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join("..")
+                    .join("..")
+                    .join("fixtures")
+                    .join("db_postprocess")
+            });
         let mut dirs = fs::read_dir(root)
             .unwrap()
             .map(|entry| entry.unwrap().path())

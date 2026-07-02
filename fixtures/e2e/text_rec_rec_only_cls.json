@@ -1,0 +1,17 @@
+{
+  "source": "python-rapidocr",
+  "image": "python/tests/test_files/text_rec.jpg",
+  "use_cls": true,
+  "pipeline": {
+    "use_det": false,
+    "use_cls": true,
+    "use_rec": true
+  },
+  "lines": [
+    {
+      "bbox": [[0.0, 0.0], [361.0, 0.0], [361.0, 77.0], [0.0, 77.0]],
+      "text": "韩国小馆",
+      "score": 0.9999
+    }
+  ]
+}

@@ -1,12 +1,21 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass
 import json
 import os
 import sys
 from pathlib import Path
 
 RAPIDOCR_PYTHON_REPO_ENV = "RAPIDOCR_PYTHON_REPO"
+
+
+@dataclass(frozen=True)
+class E2eCase:
+    name: str
+    image: Path
+    pipeline: dict[str, bool]
+    tolerances: dict[str, float] | None = None
 
 
 def parse_args() -> argparse.Namespace:
@@ -46,45 +55,64 @@ def main() -> None:
         }
     )
 
-    cases = [
-        ("ch_en_num_cls", Path("python/tests/test_files/ch_en_num.jpg"), True, None),
-        ("ch_en_num_no_cls", Path("python/tests/test_files/ch_en_num.jpg"), False, None),
-        ("text_det_cls", Path("python/tests/test_files/text_det.jpg"), True, None),
-        ("text_det_no_cls", Path("python/tests/test_files/text_det.jpg"), False, None),
-        ("en_cls", Path("python/tests/test_files/en.jpg"), True, None),
-        ("en_no_cls", Path("python/tests/test_files/en.jpg"), False, None),
-        ("empty_black_cls", Path("python/tests/test_files/empty_black.jpg"), True, None),
-        ("empty_black_no_cls", Path("python/tests/test_files/empty_black.jpg"), False, None),
-        ("test_letterbox_like_cls", Path("python/tests/test_files/test_letterbox_like.jpg"), True, None),
-        ("test_letterbox_like_no_cls", Path("python/tests/test_files/test_letterbox_like.jpg"), False, None),
-        ("text_vertical_words_cls", Path("python/tests/test_files/text_vertical_words.png"), True, None),
-        ("text_vertical_words_no_cls", Path("python/tests/test_files/text_vertical_words.png"), False, None),
-        ("latin_cls", Path("python/tests/test_files/latin.jpg"), True, None),
-        ("latin_no_cls", Path("python/tests/test_files/latin.jpg"), False, None),
-        (
+    for case in default_cases():
+        image_path = fixture_image_path(python_repo, case.image)
+        result = engine(image_path, **case.pipeline)
+        export_one(
+            out_dir / f"{case.name}.json",
+            display_path(python_repo, image_path),
+            case.pipeline,
+            result,
+            case.tolerances,
+        )
+
+
+def full_pipeline(use_cls: bool) -> dict[str, bool]:
+    return {"use_det": True, "use_cls": use_cls, "use_rec": True}
+
+
+def rec_only_pipeline(use_cls: bool) -> dict[str, bool]:
+    return {"use_det": False, "use_cls": use_cls, "use_rec": True}
+
+
+def default_cases() -> list[E2eCase]:
+    return [
+        E2eCase("ch_en_num_cls", Path("python/tests/test_files/ch_en_num.jpg"), full_pipeline(True)),
+        E2eCase("ch_en_num_no_cls", Path("python/tests/test_files/ch_en_num.jpg"), full_pipeline(False)),
+        E2eCase("text_det_cls", Path("python/tests/test_files/text_det.jpg"), full_pipeline(True)),
+        E2eCase("text_det_no_cls", Path("python/tests/test_files/text_det.jpg"), full_pipeline(False)),
+        E2eCase("en_cls", Path("python/tests/test_files/en.jpg"), full_pipeline(True)),
+        E2eCase("en_no_cls", Path("python/tests/test_files/en.jpg"), full_pipeline(False)),
+        E2eCase("empty_black_cls", Path("python/tests/test_files/empty_black.jpg"), full_pipeline(True)),
+        E2eCase("empty_black_no_cls", Path("python/tests/test_files/empty_black.jpg"), full_pipeline(False)),
+        E2eCase("short_cls", Path("python/tests/test_files/short.png"), full_pipeline(True)),
+        E2eCase("short_no_cls", Path("python/tests/test_files/short.png"), full_pipeline(False)),
+        E2eCase("test_letterbox_like_cls", Path("python/tests/test_files/test_letterbox_like.jpg"), full_pipeline(True)),
+        E2eCase("test_letterbox_like_no_cls", Path("python/tests/test_files/test_letterbox_like.jpg"), full_pipeline(False)),
+        E2eCase("test_without_det_cls", Path("python/tests/test_files/test_without_det.jpg"), full_pipeline(True)),
+        E2eCase("test_without_det_no_cls", Path("python/tests/test_files/test_without_det.jpg"), full_pipeline(False)),
+        E2eCase("return_word_debug_cls", Path("python/tests/test_files/return_word_debug.jpg"), full_pipeline(True)),
+        E2eCase("text_vertical_words_cls", Path("python/tests/test_files/text_vertical_words.png"), full_pipeline(True)),
+        E2eCase("text_vertical_words_no_cls", Path("python/tests/test_files/text_vertical_words.png"), full_pipeline(False)),
+        E2eCase("latin_cls", Path("python/tests/test_files/latin.jpg"), full_pipeline(True)),
+        E2eCase("latin_no_cls", Path("python/tests/test_files/latin.jpg"), full_pipeline(False)),
+        E2eCase(
             "issue_170_cls",
             Path("python/tests/test_files/issue_170.png"),
-            True,
+            full_pipeline(True),
             {"max_mean_corner_delta": 8.0},
         ),
-        (
+        E2eCase(
             "issue_170_no_cls",
             Path("python/tests/test_files/issue_170.png"),
-            False,
+            full_pipeline(False),
             {"max_mean_corner_delta": 8.0},
         ),
+        E2eCase("text_rec_rec_only_cls", Path("python/tests/test_files/text_rec.jpg"), rec_only_pipeline(True)),
+        E2eCase("text_rec_rec_only_no_cls", Path("python/tests/test_files/text_rec.jpg"), rec_only_pipeline(False)),
+        E2eCase("text_cls_rec_only_cls", Path("python/tests/test_files/text_cls.jpg"), rec_only_pipeline(True)),
+        E2eCase("text_cls_rec_only_no_cls", Path("python/tests/test_files/text_cls.jpg"), rec_only_pipeline(False)),
     ]
-
-    for name, image, use_cls, tolerances in cases:
-        image_path = fixture_image_path(python_repo, image)
-        result = engine(image_path, use_cls=use_cls)
-        export_one(
-            out_dir / f"{name}.json",
-            display_path(python_repo, image_path),
-            use_cls,
-            result,
-            tolerances,
-        )
 
 
 def resolve_python_repo(value: Path | None) -> Path:
@@ -119,12 +147,14 @@ def display_path(base: Path, path: Path) -> str:
         return path.resolve().as_posix()
 
 
-def export_one(path: Path, image: str, use_cls: bool, result, tolerances=None) -> None:
-    boxes = result.boxes.tolist() if result.boxes is not None else []
+def export_one(path: Path, image: str, pipeline: dict[str, bool], result, tolerances=None) -> None:
     txts = list(result.txts or [])
     scores = list(result.scores or [])
+    boxes = result_boxes(result, len(txts))
     lines = []
     for box, text, score in zip(boxes, txts, scores):
+        if not str(text).strip():
+            continue
         lines.append(
             {
                 "bbox": [[float(x), float(y)] for x, y in box],
@@ -136,12 +166,32 @@ def export_one(path: Path, image: str, use_cls: bool, result, tolerances=None) -
     payload = {
         "source": "python-rapidocr",
         "image": image,
-        "use_cls": use_cls,
+        "use_cls": pipeline["use_cls"],
         "lines": lines,
     }
+    if pipeline != full_pipeline(pipeline["use_cls"]):
+        payload["pipeline"] = pipeline
     if tolerances:
         payload["tolerances"] = tolerances
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def result_boxes(result, line_count: int) -> list:
+    if hasattr(result, "boxes") and result.boxes is not None:
+        return result.boxes.tolist()
+
+    imgs = list(getattr(result, "imgs", []) or [])
+    if not imgs or line_count == 0:
+        return []
+
+    height, width = imgs[0].shape[:2]
+    box = [
+        [0.0, 0.0],
+        [float(width - 1), 0.0],
+        [float(width - 1), float(height - 1)],
+        [0.0, float(height - 1)],
+    ]
+    return [box for _ in range(line_count)]
 
 
 if __name__ == "__main__":

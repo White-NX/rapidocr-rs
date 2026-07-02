@@ -10,20 +10,31 @@ The current e2e parity fixtures cover:
 - `text_det.jpg`
 - `en.jpg`
 - `empty_black.jpg`
+- `short.png`
 - `test_letterbox_like.jpg`
+- `test_without_det.jpg`
 - `text_vertical_words.png`
 - `latin.jpg`
+- `return_word_debug.jpg` with cls enabled
+- `text_rec.jpg` as a recognition-only cls/no-cls normal-crop check
+- `text_cls.jpg` as a recognition-only cls/no-cls 180-degree crop check
 - `text_cls.jpg` as a Rust cls/no-cls golden
+
+The current DBPostProcess parity fixtures additionally cover `black_font_color_transparent.png`, `return_word_debug.jpg`, `short.png`, and `test_without_det.jpg`.
 
 Current representative metrics:
 
 - `ch_en_num.jpg` and `text_det.jpg`: 18/18 lines matched, character accuracy about 0.976, mean center drift about 1.23 px.
 - `en.jpg`: 5/5 lines matched, exact text match, mean center drift about 0.21 px.
 - `empty_black.jpg`: 0/0 lines matched.
+- `short.png`: 0/0 lines matched.
 - `test_letterbox_like.jpg`: 2/2 lines matched, character accuracy about 0.994.
+- `test_without_det.jpg`: 1/1 line matched, exact text match, mean center drift about 0.09 px.
 - `text_vertical_words.png`: 3/3 lines matched, exact text match.
 - `latin.jpg`: 1/1 line matched, exact text match.
+- `return_word_debug.jpg` with cls enabled: 5/5 lines matched, exact text match, mean center drift about 0.68 px.
 - `issue_170.png`: 1/1 line matched, exact text match; the fixture uses a local corner-drift tolerance of 8 px because the current Rust polygon corners differ slightly more than the global 6 px gate while the center and text remain stable.
+- `text_rec.jpg` recognition-only: cls enabled and disabled both recognize `韩国小馆`.
 - `text_cls.jpg`: cls enabled recognizes the rotated crop, `--no-cls` leaves it unrecognized.
 
 ## Known Differences
@@ -62,16 +73,55 @@ Observed on `black_font_color_transparent.png` and `white_font_color_transparent
 Current candidate behavior:
 
 - Python detects 3-4 short lines such as `中国`, `我`, and `是`.
-- Rust currently merges the visible text into one large line on these transparent-background images.
+- Rust currently merges the visible text into one large line in the full OCR pipeline.
+- `black_font_color_transparent.png` now passes the DBPostProcess fixture gate by itself: 3/3 candidates matched, mean corner drift about 1.10 px.
+- `white_font_color_transparent.png` still does not pass DBPostProcess parity: Python emits 5 candidates while Rust emits 4, with mean corner drift about 12 px on the matched candidates.
 
 Impact:
 
-- The line count does not match, so these images are not strict e2e gates yet.
-- They remain useful candidates for DB/postprocess and transparent image handling work.
+- The full-pipeline line count does not match, so these images are not strict e2e gates yet.
+- The black-font case is now useful as a strict DBPostProcess regression while the full-pipeline preprocessing/recognition behavior remains unresolved.
 
 Next step:
 
-- Add transparent fixtures only after the expected preprocessing and DBPostProcess behavior is understood.
+- Investigate image loading and transparent-background preprocessing before adding full e2e transparent fixtures.
+
+### Slanted Text Without Classification
+
+Observed on `return_word_debug.jpg` with `--no-cls`.
+
+Current candidate behavior:
+
+- Python no-cls output keeps the second line as `24`.
+- Rust no-cls output recognizes the same crop as `24H专业健身|本座3F1`.
+- The cls-enabled fixture is strict and stable: 5/5 lines matched, exact text match.
+
+Impact:
+
+- This image is a good strict gate for the default cls-enabled pipeline.
+- It is not a good no-cls parity gate until the intended crop orientation and recognition behavior are understood.
+
+Next step:
+
+- Revisit after crop orientation parity is tightened for slanted detector boxes.
+
+### Tiny Border Text
+
+Observed on `ch_doc_server.png`.
+
+Current candidate behavior:
+
+- Python e2e output has 2 lines: `嫖娼` and a tiny top-border `DCIIT`.
+- Rust full-pipeline output currently keeps only `嫖娼`.
+- DBPostProcess candidate testing showed Rust emits 3 candidates while Python emits 2.
+
+Impact:
+
+- The image is useful for dense or tiny text candidate work, but it is not a strict gate yet.
+
+Next step:
+
+- Investigate small candidate filtering and text-score filtering before adding this image.
 
 ### EXIF-Oriented Text Image
 

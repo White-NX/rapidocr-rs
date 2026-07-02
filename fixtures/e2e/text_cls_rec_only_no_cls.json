@@ -1,0 +1,11 @@
+{
+  "source": "python-rapidocr",
+  "image": "python/tests/test_files/text_cls.jpg",
+  "use_cls": false,
+  "pipeline": {
+    "use_det": false,
+    "use_cls": false,
+    "use_rec": true
+  },
+  "lines": []
+}

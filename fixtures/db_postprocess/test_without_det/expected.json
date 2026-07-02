@@ -1,0 +1,37 @@
+{
+  "image": "python/tests/test_files/test_without_det.jpg",
+  "model_dir": "models",
+  "dest_shape": [
+    445,
+    109
+  ],
+  "pred_shape": [
+    1,
+    1,
+    736,
+    3008
+  ],
+  "boxes": [
+    [
+      [
+        6.0,
+        34.0
+      ],
+      [
+        443.0,
+        33.0
+      ],
+      [
+        443.0,
+        73.0
+      ],
+      [
+        6.0,
+        73.0
+      ]
+    ]
+  ],
+  "scores": [
+    0.7905055152679247
+  ]
+}

@@ -122,10 +122,13 @@ Current strict e2e coverage:
 
 - `ch_en_num.jpg` and `text_det.jpg` with cls enabled and disabled.
 - `en.jpg` and `latin.jpg` with cls enabled and disabled.
-- `empty_black.jpg` with cls enabled and disabled.
-- `test_letterbox_like.jpg` with cls enabled and disabled.
+- `empty_black.jpg` and `short.png` with cls enabled and disabled.
+- `test_letterbox_like.jpg` and `test_without_det.jpg` with cls enabled and disabled.
+- `return_word_debug.jpg` with cls enabled for slanted text and digit-string recognition.
 - `text_vertical_words.png` with cls enabled and disabled.
 - `issue_170.png` with cls enabled and disabled; this fixture uses a documented local corner-drift tolerance.
+- `text_rec.jpg` as a recognition-only normal-crop cls/no-cls check.
+- `text_cls.jpg` as a recognition-only 180-degree cls/no-cls check.
 - `text_cls.jpg` as a Rust golden for the cls/no-cls pipeline switch.
 
 Current DBPostProcess coverage:
@@ -134,9 +137,13 @@ Current DBPostProcess coverage:
 - `text_det.jpg`
 - `en.jpg`
 - `test_letterbox_like.jpg`
+- `test_without_det.jpg`
 - `text_vertical_words.png`
 - `empty_black.jpg`
 - `issue_170.png`
+- `short.png`
+- `return_word_debug.jpg`
+- `black_font_color_transparent.png`
 
 Tasks:
 
@@ -149,17 +156,17 @@ Tasks:
   - score drift
   - center drift
   - corner drift
-- In progress: add tests for cls-specific behavior:
+- Done for recognition-only e2e crops: add tests for cls-specific behavior:
   - normal text should not be rotated
   - 180-degree text should be rotated
   - `--no-cls` should preserve unrotated crops
 - In progress: add regression fixtures for DBPostProcess edge cases:
-  - empty images
+  - Done: empty images
   - dense small text
-  - vertical text
-  - slanted text
+  - Done: vertical text
+  - Done: slanted text
   - low contrast text
-  - transparent images
+  - Partial: transparent images; `black_font_color_transparent.png` is a DBPostProcess gate, while `white_font_color_transparent.png` still has a documented DB candidate-count gap.
 
 Completion criteria:
 
@@ -254,7 +261,7 @@ Completion criteria:
 The next best step is parity/performance work from the standalone repository:
 
 1. Test additional candidate fixtures before adding them to strict gates, especially noisy, small-text, transparent, EXIF-orientation, and additional language cases.
-2. Add focused cls behavior tests for normal, 180-degree, and `--no-cls` crops beyond the current `text_cls.jpg` Rust golden.
+2. Extend focused cls behavior tests beyond recognition-only crops if detector-produced crops reveal additional rotation edge cases.
 3. Extend the benchmark baseline beyond hot-loop e2e latency into model load, stage-level latency, postprocess cost, and memory usage.
 4. Keep `parity-gaps.md` updated with rejected or deferred candidate fixtures and their observed metrics.
 

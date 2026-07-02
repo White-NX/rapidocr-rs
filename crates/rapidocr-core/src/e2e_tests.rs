@@ -2,16 +2,33 @@ use std::{env, fs, path::PathBuf};
 
 use serde::Deserialize;
 
-use crate::{config::RapidOcrConfig, types::OcrLine, RapidOcr};
+use crate::{
+    config::{PipelineConfig, RapidOcrConfig},
+    types::OcrLine,
+    RapidOcr,
+};
 
 #[derive(Debug, Deserialize)]
 struct E2eFixture {
     source: String,
     image: String,
-    use_cls: bool,
+    #[serde(default)]
+    use_cls: Option<bool>,
+    #[serde(default)]
+    pipeline: Option<PipelineConfig>,
     #[serde(default)]
     tolerances: E2eTolerances,
     lines: Vec<ExpectedLine>,
+}
+
+impl E2eFixture {
+    fn pipeline(&self) -> PipelineConfig {
+        let mut pipeline = self.pipeline.unwrap_or_default();
+        if let Some(use_cls) = self.use_cls {
+            pipeline.use_cls = use_cls;
+        }
+        pipeline
+    }
 }
 
 #[derive(Debug, Clone, Copy, Deserialize)]
@@ -58,7 +75,8 @@ fn e2e_output_tracks_golden_metrics() {
     for fixture_path in fixture_files(&fixture_root) {
         let fixture: E2eFixture =
             serde_json::from_str(&fs::read_to_string(&fixture_path).unwrap()).unwrap();
-        if !models_available(&model_dir, fixture.use_cls) {
+        let pipeline = fixture.pipeline();
+        if !models_available(&model_dir, pipeline) {
             eprintln!(
                 "skipping e2e fixture {} because required models are missing under {}",
                 fixture_path.display(),
@@ -68,7 +86,7 @@ fn e2e_output_tracks_golden_metrics() {
         }
 
         let mut cfg = RapidOcrConfig::ppocr_v6_small(&model_dir);
-        cfg.pipeline.use_cls = fixture.use_cls;
+        cfg.pipeline = pipeline;
         let mut ocr = RapidOcr::new(cfg).unwrap();
         let actual = ocr
             .run_path(resolve_python_asset(&python_repo, &fixture.image))
@@ -314,13 +332,16 @@ fn fixture_files(root: &std::path::Path) -> Vec<PathBuf> {
     files
 }
 
-fn models_available(model_dir: &std::path::Path, use_cls: bool) -> bool {
-    let mut required = vec![
-        model_dir.join("PP-OCRv6_det_small.onnx"),
-        model_dir.join("PP-OCRv6_rec_small.onnx"),
-        model_dir.join("ppocrv6_dict.txt"),
-    ];
-    if use_cls {
+fn models_available(model_dir: &std::path::Path, pipeline: PipelineConfig) -> bool {
+    let mut required = Vec::new();
+    if pipeline.use_det {
+        required.push(model_dir.join("PP-OCRv6_det_small.onnx"));
+    }
+    if pipeline.use_rec {
+        required.push(model_dir.join("PP-OCRv6_rec_small.onnx"));
+        required.push(model_dir.join("ppocrv6_dict.txt"));
+    }
+    if pipeline.use_cls {
         required.push(model_dir.join("ch_ppocr_mobile_v2.0_cls_mobile.onnx"));
     }
     required.iter().all(|path| path.exists())

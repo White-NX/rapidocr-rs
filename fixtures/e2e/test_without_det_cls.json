@@ -1,0 +1,12 @@
+{
+  "source": "python-rapidocr",
+  "image": "python/tests/test_files/test_without_det.jpg",
+  "use_cls": true,
+  "lines": [
+    {
+      "bbox": [[6.0, 0.0], [443.0, 0.0], [443.0, 38.0], [6.0, 38.0]],
+      "text": "在中国作家协会第三届儿童文学",
+      "score": 0.99988
+    }
+  ]
+}

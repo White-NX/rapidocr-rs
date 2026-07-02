@@ -137,15 +137,27 @@ Run the Rust fixture test:
 cargo test -p rapidocr-core db_postprocess
 ```
 
+To evaluate DBPostProcess candidates without committing them, export to a temporary directory and point the test at it:
+
+```powershell
+python .\tools\export_db_fixture.py --out-dir target\db_candidates --image python\tests\test_files\short.png
+$env:RAPIDOCR_DB_FIXTURE_ROOT = "D:\projects\rapidocr-rs\target\db_candidates"
+cargo test -p rapidocr-core db_postprocess -- --nocapture
+```
+
 The current fixtures cover:
 
 - `ch_en_num.jpg`
 - `text_det.jpg`
 - `en.jpg`
 - `test_letterbox_like.jpg`
+- `test_without_det.jpg`
 - `text_vertical_words.png`
 - `empty_black.jpg`
 - `issue_170.png`
+- `short.png`
+- `return_word_debug.jpg`
+- `black_font_color_transparent.png`
 
 The test checks candidate count, center-distance drift, score drift, corner drift, and width/height drift against Python's `DBPostProcess` output. Use `-- --nocapture` to print the current metrics.
 
@@ -172,14 +184,20 @@ The current e2e fixtures cover:
 - `text_det.jpg` with cls enabled and disabled.
 - `en.jpg` with cls enabled and disabled.
 - `empty_black.jpg` with cls enabled and disabled.
+- `short.png` with cls enabled and disabled.
 - `test_letterbox_like.jpg` with cls enabled and disabled.
+- `test_without_det.jpg` with cls enabled and disabled.
+- `return_word_debug.jpg` with cls enabled.
 - `text_vertical_words.png` with cls enabled and disabled.
 - `latin.jpg` with cls enabled and disabled.
 - `issue_170.png` with cls enabled and disabled.
+- `text_rec.jpg` recognition-only with cls enabled and disabled.
+- `text_cls.jpg` recognition-only with cls enabled and disabled.
 - `text_cls.jpg` as a Rust golden for the cls/no-cls pipeline switch.
 
 The test checks line count, nearest-center matching, exact text ratio, character accuracy, score drift, center drift, and corner drift. It requires downloaded models in `models` and Python test images from `RAPIDOCR_PYTHON_REPO`.
 Fixtures use the default metric gates unless the JSON contains a `tolerances` object for a known, documented geometry difference.
+Fixtures may also contain a `pipeline` object with `use_det`, `use_cls`, and `use_rec` for non-default pipeline coverage such as recognition-only cls behavior.
 
 Instead of setting the environment variable every time, create a local ignored `config/local.toml`:
 
