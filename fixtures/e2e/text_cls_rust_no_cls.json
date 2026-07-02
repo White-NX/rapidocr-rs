@@ -1,0 +1,6 @@
+{
+  "source": "rapidocr-rs-golden",
+  "image": "python/tests/test_files/text_cls.jpg",
+  "use_cls": false,
+  "lines": []
+}

@@ -1,0 +1,32 @@
+{
+  "source": "python-rapidocr",
+  "image": "python/tests/test_files/issue_170.png",
+  "use_cls": false,
+  "lines": [
+    {
+      "bbox": [
+        [
+          0.0,
+          101.0
+        ],
+        [
+          799.0,
+          81.0
+        ],
+        [
+          799.0,
+          565.0
+        ],
+        [
+          0.0,
+          565.0
+        ]
+      ],
+      "text": "TEST",
+      "score": 0.99991
+    }
+  ],
+  "tolerances": {
+    "max_mean_corner_delta": 8.0
+  }
+}

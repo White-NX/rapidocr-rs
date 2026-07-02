@@ -1,0 +1,29 @@
+{
+  "source": "rapidocr-rs-golden",
+  "image": "python/tests/test_files/text_cls.jpg",
+  "use_cls": true,
+  "lines": [
+    {
+      "bbox": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          135.0,
+          0.0
+        ],
+        [
+          135.0,
+          47.0
+        ],
+        [
+          0.0,
+          47.0
+        ]
+      ],
+      "text": "怪我咯",
+      "score": 0.99863
+    }
+  ]
+}

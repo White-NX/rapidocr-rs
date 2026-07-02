@@ -1,0 +1,35 @@
+text_score = 0.5
+min_side_len = 30
+max_side_len = 2000
+min_height = 30
+width_height_ratio = 8.0
+
+[pipeline]
+use_det = true
+use_cls = true
+use_rec = true
+
+[det]
+model_path = "models/PP-OCRv6_det_small.onnx"
+limit_side_len = 736
+limit_type = "Min"
+mean = [0.5, 0.5, 0.5]
+std = [0.5, 0.5, 0.5]
+thresh = 0.3
+box_thresh = 0.5
+max_candidates = 1000
+unclip_ratio = 1.6
+min_size = 3
+
+[cls]
+model_path = "models/ch_ppocr_mobile_v2.0_cls_mobile.onnx"
+image_shape = [3, 48, 192]
+batch_size = 6
+thresh = 0.9
+labels = ["0", "180"]
+
+[rec]
+model_path = "models/PP-OCRv6_rec_small.onnx"
+dict_path = "models/ppocrv6_dict.txt"
+image_shape = [3, 48, 320]
+batch_size = 6

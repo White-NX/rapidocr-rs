@@ -1,0 +1,29 @@
+{
+  "source": "python-rapidocr",
+  "image": "python/tests/test_files/latin.jpg",
+  "use_cls": true,
+  "lines": [
+    {
+      "bbox": [
+        [
+          23.0,
+          30.0
+        ],
+        [
+          1646.0,
+          30.0
+        ],
+        [
+          1646.0,
+          88.0
+        ],
+        [
+          23.0,
+          88.0
+        ]
+      ],
+      "text": "Alphabetum in mundo hodie frequentissime adhibitum est alphabetum Latinum.",
+      "score": 0.99973
+    }
+  ]
+}
