@@ -150,6 +150,7 @@ Current DBPostProcess coverage:
 - `short.png`
 - `return_word_debug.jpg`
 - `black_font_color_transparent.png`
+- `ch_doc_server.png`
 
 Tasks:
 
@@ -179,11 +180,11 @@ Tasks:
   - count and geometry are gated without recognition text/score checks
 - In progress: add regression fixtures for DBPostProcess edge cases:
   - Done: empty images
-  - Partial: dense small text; `ch_doc_server.png` is an e2e cls gate, while no-cls text, `check_return_word_len.jpeg` text accuracy, and DBPostProcess candidate-count parity remain documented gaps.
+  - Partial: dense small text; `ch_doc_server.png` is an e2e cls, detection-only, and DBPostProcess gate, while no-cls text and `check_return_word_len.jpeg` text accuracy remain documented gaps.
   - Done: vertical text
   - Done: slanted text
   - low contrast text
-  - Partial: transparent images; `black_font_color_transparent.png` is now both a DBPostProcess and e2e gate, while `white_font_color_transparent.png` still has a documented low-confidence candidate gap.
+  - Partial: transparent images; `black_font_color_transparent.png` is now both a DBPostProcess and e2e gate, while `white_font_color_transparent.png` still has documented low-confidence recognition and geometry-drift gaps.
 
 Completion criteria:
 

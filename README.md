@@ -160,6 +160,7 @@ The current fixtures cover:
 - `short.png`
 - `return_word_debug.jpg`
 - `black_font_color_transparent.png`
+- `ch_doc_server.png`
 
 The test checks candidate count, center-distance drift, score drift, corner drift, and width/height drift against Python's `DBPostProcess` output. Use `-- --nocapture` to print the current metrics.
 

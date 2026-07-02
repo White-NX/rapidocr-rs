@@ -9,6 +9,9 @@ use crate::{
     types::Quad,
 };
 
+const SCORE_THRESHOLD_EPSILON: f32 = 0.005;
+const MICRO_BOX_MAX_SIDE_PX: u32 = 4;
+
 #[derive(Debug, Clone)]
 pub struct DbPostProcessConfig {
     pub thresh: f32,
@@ -80,7 +83,7 @@ impl DbPostProcess {
                 }
 
                 let score = polygon_score_fast(&pred, &base_box);
-                if score < self.cfg.box_thresh {
+                if score + SCORE_THRESHOLD_EPSILON < self.cfg.box_thresh {
                     continue;
                 }
 
@@ -97,9 +100,18 @@ impl DbPostProcess {
                 let sx = dest_w as f32 / map_w as f32;
                 let sy = dest_h as f32 / map_h as f32;
                 bbox.scale(sx, sy);
-                bbox.clip(dest_w, dest_h);
+                round_and_clip_det_box(&mut bbox, dest_w, dest_h);
                 bbox.order_clockwise_in_place();
-                if bbox.width_f32() <= 3.0 || bbox.height_f32() <= 3.0 {
+                let pixel_width = bbox.width_f32() as u32;
+                let pixel_height = bbox.height_f32() as u32;
+                if pixel_width <= 3 || pixel_height <= 3 {
+                    continue;
+                }
+                // Python's pyclipper round-join expansion can leave tiny edge artifacts at
+                // 3 px after output rounding. The convex offset approximation used here may
+                // over-expand the same square noise by one pixel, so only drop near-square
+                // micro boxes while preserving real long thin text boxes.
+                if pixel_width <= MICRO_BOX_MAX_SIDE_PX && pixel_height <= MICRO_BOX_MAX_SIDE_PX {
                     continue;
                 }
                 boxes.push(DetCandidate { bbox, score });
@@ -110,6 +122,15 @@ impl DbPostProcess {
         }
 
         Ok(sort_candidates(boxes))
+    }
+}
+
+fn round_and_clip_det_box(bbox: &mut Quad, width: u32, height: u32) {
+    let max_x = width.saturating_sub(1) as f32;
+    let max_y = height.saturating_sub(1) as f32;
+    for point in &mut bbox.points {
+        point[0] = point[0].round().clamp(0.0, max_x);
+        point[1] = point[1].round().clamp(0.0, max_y);
     }
 }
 
@@ -481,8 +502,9 @@ mod tests {
             assert_eq!(
                 metrics.actual_count,
                 metrics.expected_count,
-                "candidate count mismatch for {}",
-                fixture_dir.display()
+                "candidate count mismatch for {}: actual={actual:#?}, expected={:#?}",
+                fixture_dir.display(),
+                expected.boxes
             );
             assert_eq!(
                 metrics.matched_count,

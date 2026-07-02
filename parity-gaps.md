@@ -27,7 +27,7 @@ The current e2e parity fixtures cover:
 - `text_cls.jpg` as a recognition-only cls/no-cls 180-degree crop check
 - `text_cls.jpg` as a Rust cls/no-cls golden
 
-The current DBPostProcess parity fixtures additionally cover `black_font_color_transparent.png`, `return_word_debug.jpg`, `short.png`, and `test_without_det.jpg`.
+The current DBPostProcess parity fixtures additionally cover `black_font_color_transparent.png`, `return_word_debug.jpg`, `short.png`, `test_without_det.jpg`, and `ch_doc_server.png`.
 
 Current representative metrics:
 
@@ -42,6 +42,7 @@ Current representative metrics:
 - `img_exif_orientation.jpg`: 1/1 line matched, exact text match, mean center drift about 0.45 px.
 - `ch_doc_server.png` with cls enabled: 2/2 lines matched, exact text match, mean corner drift about 0.45 px.
 - `ch_doc_server.png` detection-only: 2/2 boxes matched, mean center drift about 0.24 px, mean corner drift about 0.45 px.
+- `ch_doc_server.png` DBPostProcess: 2/2 candidates matched with zero geometry drift after output rounding.
 - `test_letterbox_like.jpg`: 2/2 lines matched, character accuracy about 0.994.
 - `test_without_det.jpg`: 1/1 line matched, exact text match, mean center drift about 0.09 px.
 - `text_vertical_words.png`: 3/3 lines matched, exact text match.
@@ -90,8 +91,8 @@ Current candidate behavior:
 - Python detects short lines such as `中国`, `我`, and `是`.
 - Rust now matches `black_font_color_transparent.png` in the full OCR pipeline and DBPostProcess gate after alpha-channel images are composited onto a high-contrast background.
 - `white_font_color_transparent.png` now matches the main three text lines in the full OCR pipeline, but Python still emits an additional low-confidence `_` line with score about 0.525 that Rust does not emit.
-- `white_font_color_transparent.png` also fails the detection-only e2e gate: Rust emits 4 boxes while Python emits 5, with mean corner drift about 12 px on the matched boxes.
-- `white_font_color_transparent.png` also still does not pass DBPostProcess parity: Python emits 5 candidates while Rust emits 4, with mean corner drift about 12 px on the matched candidates.
+- `white_font_color_transparent.png` now matches Python's 5 detection candidates after the near-threshold DB score tolerance, but still has mean corner drift about 10 px.
+- `white_font_color_transparent.png` also still does not pass DBPostProcess parity because the matched boxes exceed the strict 5 px mean corner-drift gate.
 
 Impact:
 
@@ -121,7 +122,7 @@ Next step:
 
 - Revisit after crop orientation parity is tightened for slanted detector boxes.
 
-### Tiny Border Text Without Classification And DBPostProcess
+### Tiny Border Text Without Classification
 
 Observed on `ch_doc_server.png`.
 
@@ -130,16 +131,15 @@ Current candidate behavior:
 - Rust now matches Python's cls-enabled e2e output after edge-near perspective crops replicate border pixels like OpenCV.
 - The image is now also a strict detection-only geometry gate: 2/2 boxes matched with mean center drift about 0.24 px.
 - With cls disabled, Python recognizes the tiny top-border crop as `1113C`; Rust recognizes it as `1115C`.
-- DBPostProcess candidate testing with the Python detector `pred.npy` still shows Rust emits 3 candidates while Python emits 2.
 
 Impact:
 
 - The image is a strict cls-enabled e2e and detection-only geometry gate for tiny edge text.
-- It is not a strict no-cls e2e or DBPostProcess gate yet.
+- It is not a strict no-cls e2e gate yet.
 
 Next step:
 
-- Investigate no-cls crop recognition drift and small candidate filtering before adding stricter variants.
+- Investigate no-cls crop recognition drift before adding stricter variants.
 
 ### Dense Document Text
 
@@ -172,6 +172,12 @@ Python normalizes EXIF orientation through `ImageOps.exif_transpose`. Rust now r
 Observed on `ch_doc_server.png`.
 
 Python uses OpenCV `BORDER_REPLICATE` for perspective crops. Rust now pads edge-near crops with replicated border pixels before warping, which makes the tiny top-border text recognizable with cls enabled.
+
+### Tiny Edge DBPostProcess Candidate Filtering
+
+Observed on `ch_doc_server.png`.
+
+Rust now rounds output boxes before the final integer-size filter, uses a small score tolerance for near-threshold DB candidates, and drops only near-square 4 px micro boxes produced by the convex offset approximation. This matches Python's 2 DBPostProcess candidates exactly on the fixture while preserving the valid 31x4 top-border text candidate.
 
 ### Letterbox-Like Long Lines
 
