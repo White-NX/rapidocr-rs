@@ -1,0 +1,32 @@
+{
+  "source": "python-rapidocr",
+  "image": "python/tests/test_files/eslav.jpg",
+  "use_cls": true,
+  "lines": [
+    {
+      "bbox": [
+        [
+          14.0,
+          23.0
+        ],
+        [
+          1103.0,
+          23.0
+        ],
+        [
+          1103.0,
+          76.0
+        ],
+        [
+          14.0,
+          76.0
+        ]
+      ],
+      "text": "     .",
+      "score": 0.79637
+    }
+  ],
+  "tolerances": {
+    "max_mean_score_delta": 0.13
+  }
+}

@@ -125,6 +125,7 @@ Current strict e2e coverage:
 - `arabic.png`, `cyrillic.png`, `devanagari.jpg`, `japan.jpg`, and `korean.jpg` as cross-language detection-only geometry checks.
 - `ta.png`, `th_rec.jpg`, `te.png`, and `eslav.jpg` as additional script/layout detection-only geometry checks.
 - `te.png` with cls enabled and disabled as a default-model full-pipeline parity check.
+- `eslav.jpg` with cls enabled and disabled as a full-pipeline parity check with documented local score tolerance.
 - `en.jpg` and `latin.jpg` with cls enabled and disabled.
 - `empty_black.jpg` and `short.png` with cls enabled and disabled.
 - `black_font_color_transparent.png` with cls enabled and disabled for transparent-background handling.
@@ -209,6 +210,7 @@ Tasks:
   - `el_rec.jpg`
   - `devanagari_rec.png`
   - count and geometry are gated without recognition text/score checks
+- Done: full-pipeline `eslav.jpg` cls/no-cls fixtures with a local score-drift gate while text and geometry remain strict.
 - In progress: add regression fixtures for DBPostProcess edge cases:
   - Done: empty images
   - Partial: dense small text; `ch_doc_server.png` is an e2e cls, detection-only, and DBPostProcess gate, `check_return_word_len.jpeg` is a detection-only and DBPostProcess gate, while no-cls text and `check_return_word_len.jpeg` text accuracy remain documented gaps.

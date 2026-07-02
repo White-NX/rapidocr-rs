@@ -133,6 +133,18 @@ def default_cases() -> list[E2eCase]:
         E2eCase("te_cls", Path("python/tests/test_files/te.png"), full_pipeline(True)),
         E2eCase("te_no_cls", Path("python/tests/test_files/te.png"), full_pipeline(False)),
         E2eCase("te_det_only", Path("python/tests/test_files/te.png"), det_only_pipeline()),
+        E2eCase(
+            "eslav_cls",
+            Path("python/tests/test_files/eslav.jpg"),
+            full_pipeline(True),
+            {"max_mean_score_delta": 0.13},
+        ),
+        E2eCase(
+            "eslav_no_cls",
+            Path("python/tests/test_files/eslav.jpg"),
+            full_pipeline(False),
+            {"max_mean_score_delta": 0.13},
+        ),
         E2eCase("eslav_det_only", Path("python/tests/test_files/eslav.jpg"), det_only_pipeline()),
         E2eCase("en_cls", Path("python/tests/test_files/en.jpg"), full_pipeline(True)),
         E2eCase("en_no_cls", Path("python/tests/test_files/en.jpg"), full_pipeline(False)),

@@ -215,6 +215,7 @@ The current e2e fixtures cover:
 - `arabic.png`, `cyrillic.png`, `devanagari.jpg`, `japan.jpg`, and `korean.jpg` as cross-language detection-only geometry checks.
 - `ta.png`, `th_rec.jpg`, `te.png`, and `eslav.jpg` as additional script/layout detection-only geometry checks.
 - `te.png` with cls enabled and disabled as a default-model full-pipeline parity check.
+- `eslav.jpg` with cls enabled and disabled as a full-pipeline parity check with documented local score tolerance.
 - `en.jpg` with cls enabled and disabled.
 - `empty_black.jpg` with cls enabled and disabled.
 - `short.png` with cls enabled and disabled.
@@ -237,7 +238,7 @@ The current e2e fixtures cover:
 - `text_cls.jpg` as a Rust golden for the cls/no-cls pipeline switch.
 
 The test checks line count, nearest-center matching, exact text ratio, character accuracy, score drift, center drift, and corner drift. Detection-only fixtures skip recognition text/score gates and keep the count and geometry gates. It requires downloaded models in `models` and Python test images from `RAPIDOCR_PYTHON_REPO`.
-Fixtures use the default metric gates unless the JSON contains a `tolerances` object for a known, documented geometry difference.
+Fixtures use the default metric gates unless the JSON contains a `tolerances` object for a known, documented metric difference.
 Fixtures may also contain a `pipeline` object with `use_det`, `use_cls`, and `use_rec` for non-default pipeline coverage such as recognition-only cls behavior and detection-only geometry checks.
 
 Instead of setting the environment variable every time, create a local ignored `config/local.toml`:
