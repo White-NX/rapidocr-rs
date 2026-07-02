@@ -10,6 +10,13 @@ import numpy as np
 
 RAPIDOCR_PYTHON_REPO_ENV = "RAPIDOCR_PYTHON_REPO"
 
+DB_TOLERANCES = {
+    "white_font_color_transparent": {
+        "max_mean_corner_delta": 12.0,
+        "max_mean_size_delta": 7.0,
+    },
+}
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
@@ -62,6 +69,7 @@ def main() -> None:
         Path("python/tests/test_files/short.png"),
         Path("python/tests/test_files/return_word_debug.jpg"),
         Path("python/tests/test_files/black_font_color_transparent.png"),
+        Path("python/tests/test_files/white_font_color_transparent.png"),
         Path("python/tests/test_files/ch_doc_server.png"),
         Path("python/tests/test_files/check_return_word_len.jpeg"),
         Path("python/tests/test_files/arabic.png"),
@@ -172,6 +180,8 @@ def export_one(
         "boxes": boxes.astype(float).tolist(),
         "scores": [float(score) for score in scores],
     }
+    if image_path.stem in DB_TOLERANCES:
+        metadata["tolerances"] = DB_TOLERANCES[image_path.stem]
     (out_dir / "expected.json").write_text(
         json.dumps(metadata, ensure_ascii=False, indent=2),
         encoding="utf-8",

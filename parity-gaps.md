@@ -31,7 +31,7 @@ The current e2e parity fixtures cover:
 - `text_cls.jpg` as a recognition-only cls/no-cls 180-degree crop check
 - `text_cls.jpg` as a Rust cls/no-cls golden
 
-The current DBPostProcess parity fixtures additionally cover `black_font_color_transparent.png`, `return_word_debug.jpg`, `short.png`, `test_without_det.jpg`, `ch_doc_server.png`, `check_return_word_len.jpeg`, `arabic.png`, `devanagari.jpg`, `japan.jpg`, `ta.png`, `te.png`, and `eslav.jpg`.
+The current DBPostProcess parity fixtures additionally cover `black_font_color_transparent.png`, `white_font_color_transparent.png`, `return_word_debug.jpg`, `short.png`, `test_without_det.jpg`, `ch_doc_server.png`, `check_return_word_len.jpeg`, `arabic.png`, `devanagari.jpg`, `japan.jpg`, `ta.png`, `te.png`, and `eslav.jpg`.
 
 Current representative metrics:
 
@@ -43,6 +43,7 @@ Current representative metrics:
 - `empty_black.jpg`: 0/0 lines matched.
 - `short.png`: 0/0 lines matched.
 - `black_font_color_transparent.png`: 3/3 lines matched, exact text match, mean center drift about 1.03 px.
+- `white_font_color_transparent.png` DBPostProcess: 5/5 candidates matched, mean center drift about 1.37 px; it uses local corner/size drift tolerances for documented offset-geometry differences.
 - `img_exif_orientation.jpg`: 1/1 line matched, exact text match, mean center drift about 0.45 px.
 - `ch_doc_server.png` with cls enabled: 2/2 lines matched, exact text match, mean corner drift about 0.45 px.
 - `ch_doc_server.png` detection-only: 2/2 boxes matched, mean center drift about 0.24 px, mean corner drift about 0.45 px.
@@ -102,17 +103,17 @@ Current candidate behavior:
 - Python detects short lines such as `中国`, `我`, and `是`.
 - Rust now matches `black_font_color_transparent.png` in the full OCR pipeline and DBPostProcess gate after alpha-channel images are composited onto a high-contrast background.
 - `white_font_color_transparent.png` now matches the main three text lines in the full OCR pipeline, but Python still emits an additional low-confidence `_` line with score about 0.525 that Rust does not emit.
-- `white_font_color_transparent.png` now matches Python's 5 detection candidates after the near-threshold DB score tolerance, but still has mean corner drift about 10 px.
-- `white_font_color_transparent.png` also still does not pass DBPostProcess parity because the matched boxes exceed the strict 5 px mean corner-drift gate.
+- `white_font_color_transparent.png` now matches Python's 5 DBPostProcess candidates after the near-threshold DB score tolerance. It is a strict DB gate with local geometry tolerances: mean corner drift is about 10 px and mean size drift about 5.2 px.
+- `white_font_color_transparent.png` still does not pass full e2e parity because Python emits the additional low-confidence `_` line while Rust does not.
 
 Impact:
 
-- The black-font case is now a strict e2e and DBPostProcess regression.
-- The white-font case remains useful for low-confidence and small transparent candidate work, but is not a strict gate yet.
+- The black-font case is a strict e2e and DBPostProcess regression.
+- The white-font case now protects DB candidate count and score behavior, but the full OCR output remains outside strict e2e gates.
 
 Next step:
 
-- Investigate whether the low-confidence `_` candidate in the white-font image is desirable enough to preserve before adding it as a strict fixture.
+- Investigate whether the low-confidence `_` candidate in the white-font image is desirable enough to preserve before adding it as a strict full e2e fixture.
 
 ### Slanted Text Without Classification
 

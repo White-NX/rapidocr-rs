@@ -160,6 +160,7 @@ The current fixtures cover:
 - `short.png`
 - `return_word_debug.jpg`
 - `black_font_color_transparent.png`
+- `white_font_color_transparent.png`
 - `ch_doc_server.png`
 - `check_return_word_len.jpeg`
 - `arabic.png`
@@ -169,7 +170,7 @@ The current fixtures cover:
 - `te.png`
 - `eslav.jpg`
 
-The test checks candidate count, center-distance drift, score drift, corner drift, and width/height drift against Python's `DBPostProcess` output. Use `-- --nocapture` to print the current metrics.
+The test checks candidate count, center-distance drift, score drift, corner drift, and width/height drift against Python's `DBPostProcess` output. Use `-- --nocapture` to print the current metrics. Fixtures may include local `tolerances` for documented geometry drift.
 
 ## End-to-End Golden Tests
 

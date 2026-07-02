@@ -154,6 +154,7 @@ Current DBPostProcess coverage:
 - `short.png`
 - `return_word_debug.jpg`
 - `black_font_color_transparent.png`
+- `white_font_color_transparent.png`
 - `ch_doc_server.png`
 - `check_return_word_len.jpeg`
 - `arabic.png`
@@ -202,7 +203,7 @@ Tasks:
   - low contrast text
   - Done: representative cross-language DBPostProcess fixtures for Arabic, Devanagari, and Japanese text layout.
   - Done: additional script/layout DBPostProcess fixtures for Tamil, Telugu, and Eslav images.
-  - Partial: transparent images; `black_font_color_transparent.png` is now both a DBPostProcess and e2e gate, while `white_font_color_transparent.png` still has documented low-confidence recognition and geometry-drift gaps.
+  - Partial: transparent images; `black_font_color_transparent.png` is both a DBPostProcess and e2e gate, and `white_font_color_transparent.png` is a DBPostProcess gate with documented local geometry tolerance while its full e2e low-confidence recognition line remains a gap.
 
 Completion criteria:
 

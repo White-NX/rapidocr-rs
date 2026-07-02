@@ -470,6 +470,31 @@ mod tests {
         dest_shape: [u32; 2],
         boxes: Vec<[[f32; 2]; 4]>,
         scores: Vec<f32>,
+        #[serde(default)]
+        tolerances: DbTolerances,
+    }
+
+    #[derive(Debug, Clone, Copy, Deserialize)]
+    struct DbTolerances {
+        #[serde(default = "default_max_mean_center_delta")]
+        max_mean_center_delta: f32,
+        #[serde(default = "default_max_mean_score_delta")]
+        max_mean_score_delta: f32,
+        #[serde(default = "default_max_mean_corner_delta")]
+        max_mean_corner_delta: f32,
+        #[serde(default = "default_max_mean_size_delta")]
+        max_mean_size_delta: f32,
+    }
+
+    impl Default for DbTolerances {
+        fn default() -> Self {
+            Self {
+                max_mean_center_delta: default_max_mean_center_delta(),
+                max_mean_score_delta: default_max_mean_score_delta(),
+                max_mean_corner_delta: default_max_mean_corner_delta(),
+                max_mean_size_delta: default_max_mean_size_delta(),
+            }
+        }
     }
 
     #[test]
@@ -518,30 +543,46 @@ mod tests {
             }
 
             assert!(
-                metrics.mean_center_delta < 20.0,
+                metrics.mean_center_delta < expected.tolerances.max_mean_center_delta,
                 "mean center delta too high for {}: {}",
                 fixture_dir.display(),
                 metrics.mean_center_delta
             );
             assert!(
-                metrics.mean_score_delta < 0.15,
+                metrics.mean_score_delta < expected.tolerances.max_mean_score_delta,
                 "mean score delta too high for {}: {}",
                 fixture_dir.display(),
                 metrics.mean_score_delta
             );
             assert!(
-                metrics.mean_corner_delta < 5.0,
+                metrics.mean_corner_delta < expected.tolerances.max_mean_corner_delta,
                 "mean corner delta too high for {}: {}",
                 fixture_dir.display(),
                 metrics.mean_corner_delta
             );
             assert!(
-                metrics.mean_size_delta < 5.0,
+                metrics.mean_size_delta < expected.tolerances.max_mean_size_delta,
                 "mean size delta too high for {}: {}",
                 fixture_dir.display(),
                 metrics.mean_size_delta
             );
         }
+    }
+
+    fn default_max_mean_center_delta() -> f32 {
+        20.0
+    }
+
+    fn default_max_mean_score_delta() -> f32 {
+        0.15
+    }
+
+    fn default_max_mean_corner_delta() -> f32 {
+        5.0
+    }
+
+    fn default_max_mean_size_delta() -> f32 {
+        5.0
     }
 
     #[derive(Debug)]
