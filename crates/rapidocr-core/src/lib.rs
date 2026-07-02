@@ -12,7 +12,7 @@ pub mod types;
 #[cfg(test)]
 mod e2e_tests;
 
-use std::path::Path;
+use std::{path::Path, time::Instant};
 
 use anyhow::{bail, Context, Result};
 
@@ -24,7 +24,7 @@ use crate::{
         apply_vertical_padding, crop_perspective, load_rgb_image, resize_image_within_bounds,
     },
     rec::TextRecognizer,
-    types::{OcrLine, OcrOutput, Quad},
+    types::{OcrLine, OcrOutput, OcrTimings, Quad, TimedOcrOutput},
 };
 
 pub struct RapidOcr {
@@ -88,18 +88,38 @@ impl RapidOcr {
     }
 
     pub fn run_path(&mut self, image_path: impl AsRef<Path>) -> Result<OcrOutput> {
+        Ok(self.run_path_timed(image_path)?.output)
+    }
+
+    pub fn run_path_timed(&mut self, image_path: impl AsRef<Path>) -> Result<TimedOcrOutput> {
+        let total_start = Instant::now();
+        let start = Instant::now();
         let image = load_rgb_image(image_path)?;
-        self.run_image(&image)
+        let image_load_ms = elapsed_ms(start);
+        let mut timed = self.run_image_timed(&image)?;
+        timed.timings.image_load_ms = image_load_ms;
+        timed.timings.total_ms = elapsed_ms(total_start);
+        Ok(timed)
     }
 
     pub fn run_image(&mut self, image: &image::RgbImage) -> Result<OcrOutput> {
+        Ok(self.run_image_timed(image)?.output)
+    }
+
+    pub fn run_image_timed(&mut self, image: &image::RgbImage) -> Result<TimedOcrOutput> {
+        let total_start = Instant::now();
+        let mut timings = OcrTimings::default();
         if image.width() == 0 || image.height() == 0 {
             bail!("invalid image: width and height must be greater than 0");
         }
 
+        let detection_enabled = self.detector.is_some();
         let needs_recognition = self.recognizer.is_some();
-        let (boxes, crops) = if self.detector.is_some() {
-            self.detect_and_crop(image, needs_recognition)?
+        let (boxes, crops) = if detection_enabled {
+            let (boxes, crops, det_timings) =
+                self.detect_and_crop_timed(image, needs_recognition)?;
+            timings.add_assign(&det_timings);
+            (boxes, crops)
         } else {
             let bbox = Quad::from_xyxy(
                 0.0,
@@ -119,21 +139,32 @@ impl RapidOcr {
                     score: 0.0,
                 })
                 .collect();
-            return Ok(OcrOutput { lines });
+            timings.total_ms = elapsed_ms(total_start);
+            return Ok(TimedOcrOutput {
+                output: OcrOutput { lines },
+                timings,
+            });
         };
 
         let crops = if let Some(classifier) = &mut self.classifier {
-            classifier.classify_and_rotate(&crops)?
+            let cls = classifier.classify_and_rotate_owned_timed(crops)?;
+            timings.add_assign(&cls.timings);
+            cls.imgs
         } else {
             crops
         };
-        let rec = recognizer.recognize(&crops)?;
+        let rec = recognizer.recognize_timed(&crops)?;
+        timings.add_assign(&rec.timings);
 
+        let start = Instant::now();
         let lines = boxes
             .into_iter()
-            .zip(rec)
+            .zip(rec.texts)
             .filter_map(|(bbox, text)| {
-                if text.text.trim().is_empty() || text.score < self.cfg.text_score {
+                if text.text.trim().is_empty() {
+                    return None;
+                }
+                if detection_enabled && text.score < self.cfg.text_score {
                     return None;
                 }
                 Some(OcrLine {
@@ -143,27 +174,40 @@ impl RapidOcr {
                 })
             })
             .collect();
+        timings.output_filter_ms = elapsed_ms(start);
+        timings.total_ms = elapsed_ms(total_start);
 
-        Ok(OcrOutput { lines })
+        Ok(TimedOcrOutput {
+            output: OcrOutput { lines },
+            timings,
+        })
     }
 
-    fn detect_and_crop(
+    fn detect_and_crop_timed(
         &mut self,
         image: &image::RgbImage,
         needs_crops: bool,
-    ) -> Result<(Vec<Quad>, Vec<image::RgbImage>)> {
+    ) -> Result<(Vec<Quad>, Vec<image::RgbImage>, OcrTimings)> {
+        let mut timings = OcrTimings::default();
         let original_width = image.width();
         let original_height = image.height();
+
+        let start = Instant::now();
         let (resized, ratio_w, ratio_h) =
             resize_image_within_bounds(image, self.cfg.min_side_len, self.cfg.max_side_len)?;
         let (det_image, padding_top) =
             apply_vertical_padding(&resized, self.cfg.width_height_ratio, self.cfg.min_height)?;
+        timings.pipeline_preprocess_ms = elapsed_ms(start);
 
         let detector = self
             .detector
             .as_mut()
             .context("detection stage is not enabled")?;
-        let mut boxes = detector.detect(&det_image)?;
+        let det = detector.detect_timed(&det_image)?;
+        timings.add_assign(&det.timings);
+        let mut boxes = det.boxes;
+
+        let start = Instant::now();
         let crops = if needs_crops {
             boxes
                 .iter()
@@ -182,9 +226,14 @@ impl RapidOcr {
             b.scale(ratio_w, ratio_h);
             b.clip(original_width, original_height);
         }
+        timings.crop_ms = elapsed_ms(start);
 
-        Ok((boxes, crops))
+        Ok((boxes, crops, timings))
     }
+}
+
+fn elapsed_ms(start: Instant) -> f64 {
+    start.elapsed().as_secs_f64() * 1000.0
 }
 
 #[cfg(test)]

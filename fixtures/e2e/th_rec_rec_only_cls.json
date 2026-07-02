@@ -1,0 +1,17 @@
+{
+  "source": "python-rapidocr",
+  "image": "python/tests/test_files/th_rec.jpg",
+  "use_cls": true,
+  "lines": [
+    {
+      "bbox": [[0.0, 0.0], [925.0, 0.0], [925.0, 49.0], [0.0, 49.0]],
+      "text": "nsuwnuuzinunavnlunnaunuiula",
+      "score": 0.55647
+    }
+  ],
+  "pipeline": {
+    "use_det": false,
+    "use_cls": true,
+    "use_rec": true
+  }
+}

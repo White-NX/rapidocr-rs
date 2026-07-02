@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use anyhow::{Context, Result};
 
 use crate::{
@@ -5,7 +7,7 @@ use crate::{
     db_postprocess::{DbPostProcess, DbPostProcessConfig},
     image_ops::{resize_to_multiple_for_det, rgb_to_nchw},
     inference::OnnxSession,
-    types::Quad,
+    types::{OcrTimings, Quad},
 };
 
 pub struct TextDetector {
@@ -32,18 +34,43 @@ impl TextDetector {
     }
 
     pub fn detect(&mut self, img: &image::RgbImage) -> Result<Vec<Quad>> {
+        Ok(self.detect_timed(img)?.boxes)
+    }
+
+    pub fn detect_timed(&mut self, img: &image::RgbImage) -> Result<DetectResult> {
+        let mut timings = OcrTimings::default();
+
+        let start = Instant::now();
         let input_img = resize_to_multiple_for_det(
             img,
             self.cfg.limit_side_len,
             matches!(self.cfg.limit_type, LimitType::Min),
         )?;
         let tensor = rgb_to_nchw(&input_img, self.cfg.mean, self.cfg.std);
+        timings.det_preprocess_ms = elapsed_ms(start);
+
+        let start = Instant::now();
         let pred = self.session.run_f32(&tensor)?;
-        Ok(self
+        timings.det_inference_ms = elapsed_ms(start);
+
+        let start = Instant::now();
+        let boxes = self
             .postprocess
             .process(pred, img.width(), img.height())?
             .into_iter()
             .map(|candidate| candidate.bbox)
-            .collect())
+            .collect();
+        timings.det_postprocess_ms = elapsed_ms(start);
+
+        Ok(DetectResult { boxes, timings })
     }
+}
+
+pub struct DetectResult {
+    pub boxes: Vec<Quad>,
+    pub timings: OcrTimings,
+}
+
+fn elapsed_ms(start: Instant) -> f64 {
+    start.elapsed().as_secs_f64() * 1000.0
 }

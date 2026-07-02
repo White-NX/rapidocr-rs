@@ -5,8 +5,10 @@ use clap::Parser;
 use rapidocr_core::{
     config::RapidOcrConfig,
     model::{ModelCache, ModelDownloadMode, PPOCRV6_SMALL},
+    types::OcrTimings,
     RapidOcr,
 };
+use serde::Serialize;
 
 #[derive(Debug, Parser)]
 struct Args {
@@ -39,6 +41,9 @@ struct Args {
 
     #[arg(long)]
     quiet: bool,
+
+    #[arg(long)]
+    benchmark_json: bool,
 }
 
 fn main() -> Result<()> {
@@ -74,25 +79,50 @@ fn main() -> Result<()> {
 
     apply_pipeline_overrides(&mut cfg, &args);
     cfg.validate()?;
+    let model_load_start = Instant::now();
     let mut ocr = RapidOcr::new(cfg)?;
+    let model_load_ms = model_load_start.elapsed().as_secs_f64() * 1000.0;
     let repeat = args.repeat.max(1);
     let mut elapsed = Vec::with_capacity(repeat);
+    let mut timings = Vec::with_capacity(repeat);
     let mut output = None;
     for _ in 0..repeat {
         let start = Instant::now();
-        output = Some(ocr.run_path(image)?);
+        if args.benchmark_json {
+            let timed = ocr.run_path_timed(image)?;
+            output = Some(timed.output);
+            timings.push(timed.timings);
+        } else {
+            output = Some(ocr.run_path(image)?);
+        }
         elapsed.push(start.elapsed());
     }
 
+    let elapsed_ms = elapsed
+        .iter()
+        .map(|d| d.as_secs_f64() * 1000.0)
+        .collect::<Vec<_>>();
+    let total_ms = elapsed_ms.iter().sum::<f64>();
+    let mean_ms = total_ms / repeat as f64;
+    let min_ms = elapsed_ms.iter().copied().fold(f64::INFINITY, f64::min);
+    let max_ms = elapsed_ms.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+
+    if args.benchmark_json {
+        let summary = BenchmarkJson {
+            repeat,
+            model_load_ms,
+            total_ms,
+            mean_ms,
+            min_ms,
+            max_ms,
+            mean_timings: mean_timings(&timings),
+            line_count: output.as_ref().map(|out| out.lines.len()).unwrap_or(0),
+        };
+        println!("{}", serde_json::to_string_pretty(&summary)?);
+        return Ok(());
+    }
+
     if args.quiet || repeat > 1 {
-        let elapsed_ms = elapsed
-            .iter()
-            .map(|d| d.as_secs_f64() * 1000.0)
-            .collect::<Vec<_>>();
-        let total_ms = elapsed_ms.iter().sum::<f64>();
-        let mean_ms = total_ms / repeat as f64;
-        let min_ms = elapsed_ms.iter().copied().fold(f64::INFINITY, f64::min);
-        let max_ms = elapsed_ms.iter().copied().fold(f64::NEG_INFINITY, f64::max);
         eprintln!(
             "repeat={repeat}\ttotal_ms={total_ms:.3}\tmean_ms={mean_ms:.3}\tmin_ms={min_ms:.3}\tmax_ms={max_ms:.3}"
         );
@@ -104,6 +134,26 @@ fn main() -> Result<()> {
         }
     }
     Ok(())
+}
+
+#[derive(Debug, Serialize)]
+struct BenchmarkJson {
+    repeat: usize,
+    model_load_ms: f64,
+    total_ms: f64,
+    mean_ms: f64,
+    min_ms: f64,
+    max_ms: f64,
+    mean_timings: OcrTimings,
+    line_count: usize,
+}
+
+fn mean_timings(timings: &[OcrTimings]) -> OcrTimings {
+    let mut out = OcrTimings::default();
+    for timing in timings {
+        out.add_assign(timing);
+    }
+    out.div(timings.len().max(1) as f64)
 }
 
 fn apply_pipeline_overrides(cfg: &mut RapidOcrConfig, args: &Args) {

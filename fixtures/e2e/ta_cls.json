@@ -1,0 +1,17 @@
+{
+  "source": "python-rapidocr",
+  "image": "python/tests/test_files/ta.png",
+  "use_cls": true,
+  "lines": [
+    {
+      "bbox": [[121.0, 3.0], [509.0, 5.0], [509.0, 46.0], [120.0, 44.0]],
+      "text": "    .",
+      "score": 0.79401
+    }
+  ],
+  "tolerances": {
+    "min_exact_text_ratio": 0.0,
+    "min_char_accuracy": 0.8,
+    "max_mean_score_delta": 0.11
+  }
+}

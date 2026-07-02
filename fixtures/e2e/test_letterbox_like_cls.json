@@ -47,5 +47,9 @@
       "text": "provider实现的，由于性能的原因，它也不一定会把操作分配/放置到CUDAEP上。要想看到ORT决定的位置，请打开verbose日志并查看控制台的输出。",
       "score": 0.99954
     }
-  ]
+  ],
+  "tolerances": {
+    "min_exact_text_ratio": 0.0,
+    "min_char_accuracy": 0.98
+  }
 }

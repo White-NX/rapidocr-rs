@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass
 from datetime import datetime
+import json
 import os
 import platform
 import statistics
@@ -10,8 +11,14 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 RAPIDOCR_PYTHON_REPO_ENV = "RAPIDOCR_PYTHON_REPO"
+
+try:
+    import psutil
+except ImportError:  # pragma: no cover - optional benchmark dependency
+    psutil = None
 
 
 def parse_args() -> argparse.Namespace:
@@ -51,6 +58,9 @@ class BenchStats:
     min_ms: float
     max_ms: float
     total_ms: float | None = None
+    model_load_ms: float | None = None
+    peak_rss_bytes: int | None = None
+    stages: dict[str, float] | None = None
 
 
 def main() -> None:
@@ -137,22 +147,19 @@ def bench_rust(
         "--repeat",
         str(repeat),
         "--quiet",
+        "--benchmark-json",
     ]
     if no_cls:
         cmd.append("--no-cls")
 
-    start = time.perf_counter()
-    completed = subprocess.run(
-        cmd,
-        cwd=rs_root,
-        check=True,
-        text=True,
-        capture_output=True,
-    )
-    total_ms = (time.perf_counter() - start) * 1000.0
-    parsed = parse_rust_stats(completed.stderr)
+    stdout, stderr, peak_rss_bytes = run_sampled(cmd, rs_root)
+    parsed = parse_rust_json(stdout, peak_rss_bytes)
     if parsed is not None:
         return parsed
+
+    total_ms = parse_process_total_ms(stderr)
+    if total_ms is None:
+        total_ms = 0.0
     mean_ms = total_ms / repeat
     return BenchStats(
         name="rust_cli_hot",
@@ -160,6 +167,7 @@ def bench_rust(
         min_ms=mean_ms,
         max_ms=mean_ms,
         total_ms=total_ms,
+        peak_rss_bytes=peak_rss_bytes,
     )
 
 
@@ -174,20 +182,137 @@ def bench_python(
 
     from rapidocr import RapidOCR
 
+    process = psutil.Process(os.getpid()) if psutil is not None else None
+    peak_rss_bytes = current_rss(process)
+    start = time.perf_counter()
     engine = RapidOCR(
         params={
             "Global.model_root_dir": str(model_dir),
         }
     )
+    model_load_ms = (time.perf_counter() - start) * 1000.0
+    peak_rss_bytes = max_optional(peak_rss_bytes, current_rss(process))
     use_cls = not no_cls
     engine(image, use_cls=use_cls)
+    peak_rss_bytes = max_optional(peak_rss_bytes, current_rss(process))
 
     times = []
+    stage_values: dict[str, list[float]] = {
+        "det_ms": [],
+        "cls_ms": [],
+        "rec_ms": [],
+    }
     for _ in range(repeat):
         start = time.perf_counter()
-        engine(image, use_cls=use_cls)
+        result = engine(image, use_cls=use_cls)
         times.append((time.perf_counter() - start) * 1000.0)
-    return stats_from_values("python_hot", times)
+        collect_python_stages(result, stage_values)
+        peak_rss_bytes = max_optional(peak_rss_bytes, current_rss(process))
+    stats = stats_from_values("python_hot", times)
+    stats.model_load_ms = model_load_ms
+    stats.peak_rss_bytes = peak_rss_bytes
+    stats.stages = {
+        name: statistics.mean(values) for name, values in stage_values.items() if values
+    }
+    return stats
+
+
+def run_sampled(cmd: list[str], cwd: Path) -> tuple[str, str, int | None]:
+    process = subprocess.Popen(
+        cmd,
+        cwd=cwd,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    ps_process = psutil.Process(process.pid) if psutil is not None else None
+    peak_rss_bytes = current_rss(ps_process)
+    while process.poll() is None:
+        peak_rss_bytes = max_optional(peak_rss_bytes, current_rss(ps_process))
+        time.sleep(0.01)
+    stdout, stderr = process.communicate()
+    peak_rss_bytes = max_optional(peak_rss_bytes, current_rss(ps_process))
+    if process.returncode != 0:
+        raise subprocess.CalledProcessError(process.returncode, cmd, stdout, stderr)
+    return stdout, stderr, peak_rss_bytes
+
+
+def current_rss(process) -> int | None:
+    if process is None:
+        return None
+    try:
+        return int(process.memory_info().rss)
+    except Exception:
+        return None
+
+
+def max_optional(a: int | None, b: int | None) -> int | None:
+    if a is None:
+        return b
+    if b is None:
+        return a
+    return max(a, b)
+
+
+def parse_rust_json(stdout: str, peak_rss_bytes: int | None) -> BenchStats | None:
+    try:
+        payload = json.loads(stdout)
+    except json.JSONDecodeError:
+        return None
+
+    stages = rust_stage_summary(payload.get("mean_timings", {}))
+    return BenchStats(
+        name="rust_cli_hot",
+        mean_ms=float(payload["mean_ms"]),
+        min_ms=float(payload["min_ms"]),
+        max_ms=float(payload["max_ms"]),
+        total_ms=float(payload["total_ms"]),
+        model_load_ms=float(payload["model_load_ms"]),
+        peak_rss_bytes=peak_rss_bytes,
+        stages=stages,
+    )
+
+
+def rust_stage_summary(timings: dict[str, Any]) -> dict[str, float]:
+    def value(name: str) -> float:
+        return float(timings.get(name, 0.0) or 0.0)
+
+    return {
+        "image_load_ms": value("image_load_ms"),
+        "det_ms": value("pipeline_preprocess_ms")
+        + value("det_preprocess_ms")
+        + value("det_inference_ms")
+        + value("det_postprocess_ms"),
+        "det_inference_ms": value("det_inference_ms"),
+        "det_postprocess_ms": value("det_postprocess_ms"),
+        "crop_ms": value("crop_ms"),
+        "cls_ms": value("cls_preprocess_ms")
+        + value("cls_inference_ms")
+        + value("cls_postprocess_ms"),
+        "rec_ms": value("rec_preprocess_ms")
+        + value("rec_inference_ms")
+        + value("rec_decode_ms"),
+        "output_filter_ms": value("output_filter_ms"),
+    }
+
+
+def collect_python_stages(result, stage_values: dict[str, list[float]]) -> None:
+    elapse_list = getattr(result, "elapse_list", None)
+    if elapse_list is not None and len(elapse_list) >= 3:
+        append_stage_ms(stage_values, "det_ms", elapse_list[0])
+        append_stage_ms(stage_values, "cls_ms", elapse_list[1])
+        append_stage_ms(stage_values, "rec_ms", elapse_list[2])
+        return
+
+    elapse = getattr(result, "elapse", None)
+    if elapse is not None:
+        stage_values["rec_ms"].append(float(elapse) * 1000.0)
+
+
+def append_stage_ms(stage_values: dict[str, list[float]], name: str, value) -> None:
+    if value is None:
+        return
+    stage_values[name].append(float(value) * 1000.0)
 
 
 def parse_rust_stats(stderr: str) -> BenchStats | None:
@@ -207,6 +332,14 @@ def parse_rust_stats(stderr: str) -> BenchStats | None:
     return None
 
 
+def parse_process_total_ms(stderr: str) -> float | None:
+    for part in stderr.replace("\n", "\t").split("\t"):
+        key, sep, value = part.partition("=")
+        if sep and key == "total_ms":
+            return float(value)
+    return None
+
+
 def stats_from_values(name: str, values: list[float]) -> BenchStats:
     return BenchStats(
         name=name,
@@ -218,10 +351,34 @@ def stats_from_values(name: str, values: list[float]) -> BenchStats:
 
 
 def print_stats(stats: BenchStats) -> None:
+    model_load = (
+        f"\tmodel_load_ms={stats.model_load_ms:.3f}"
+        if stats.model_load_ms is not None
+        else ""
+    )
+    rss = (
+        f"\tpeak_rss_mb={stats.peak_rss_bytes / (1024 * 1024):.1f}"
+        if stats.peak_rss_bytes is not None
+        else ""
+    )
+    stages = format_stage_summary(stats)
     print(
         f"{stats.name}\tmean_ms={stats.mean_ms:.3f}\t"
         f"min_ms={stats.min_ms:.3f}\tmax_ms={stats.max_ms:.3f}"
+        f"{model_load}{rss}{stages}"
     )
+
+
+def format_stage_summary(stats: BenchStats) -> str:
+    if not stats.stages:
+        return ""
+    names = ["det_ms", "cls_ms", "rec_ms", "det_postprocess_ms"]
+    parts = []
+    for name in names:
+        value = stats.stages.get(name)
+        if value is not None:
+            parts.append(f"{name}={value:.3f}")
+    return "\t" + "\t".join(parts) if parts else ""
 
 
 def write_markdown_result(
@@ -245,16 +402,31 @@ def write_markdown_result(
         f"- model_dir: {model_dir}",
         f"- repeat: {repeat}",
         "",
-        "| image | use_cls | runner | mean_ms | min_ms | max_ms |",
-        "| --- | --- | --- | ---: | ---: | ---: |",
+        "| image | use_cls | runner | model_load_ms | mean_ms | min_ms | max_ms | peak_rss_mb | det_ms | cls_ms | rec_ms | det_postprocess_ms |",
+        "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
     for image, use_cls, stats in rows:
+        stages = stats.stages or {}
+        rss_mb = (
+            f"{stats.peak_rss_bytes / (1024 * 1024):.1f}"
+            if stats.peak_rss_bytes is not None
+            else ""
+        )
+        model_load = f"{stats.model_load_ms:.3f}" if stats.model_load_ms is not None else ""
         lines.append(
             f"| `{image}` | {str(use_cls).lower()} | `{stats.name}` | "
-            f"{stats.mean_ms:.3f} | {stats.min_ms:.3f} | {stats.max_ms:.3f} |"
+            f"{model_load} | {stats.mean_ms:.3f} | {stats.min_ms:.3f} | {stats.max_ms:.3f} | "
+            f"{rss_mb} | {format_stage_value(stages, 'det_ms')} | "
+            f"{format_stage_value(stages, 'cls_ms')} | {format_stage_value(stages, 'rec_ms')} | "
+            f"{format_stage_value(stages, 'det_postprocess_ms')} |"
         )
     lines.append("")
     path.write_text("\n".join(lines), encoding="utf-8")
+
+
+def format_stage_value(stages: dict[str, float], name: str) -> str:
+    value = stages.get(name)
+    return f"{value:.3f}" if value is not None else ""
 
 
 if __name__ == "__main__":

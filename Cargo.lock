@@ -1790,6 +1790,8 @@ dependencies = [
  "anyhow",
  "clap",
  "rapidocr-core",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

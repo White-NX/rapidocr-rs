@@ -1,6 +1,6 @@
 # rapidocr-rs Parity Gaps
 
-This file records known differences between the current Rust MVP and Python RapidOCR. These are not ignored forever; they are kept out of strict e2e gates until the expected behavior is understood and the implementation is closer to Python parity.
+This file records known differences between the current Rust MVP and Python RapidOCR. These are not ignored forever; they are either covered by explicit local-tolerance gates when useful as regression checks, or kept out of strict e2e gates until the expected behavior is understood and the implementation is closer to Python parity.
 
 ## Current Strong Gates
 
@@ -12,6 +12,7 @@ The current e2e parity fixtures cover:
 - `check_return_word_len.jpeg` with cls enabled, cls disabled, and detection-only as dense-text checks with local text tolerance
 - `arabic.png`, `cyrillic.png`, `devanagari.jpg`, `japan.jpg`, and `korean.jpg` as cross-language detection-only geometry checks
 - `ta.png`, `th_rec.jpg`, `te.png`, and `eslav.jpg` as additional script/layout detection-only geometry checks
+- `ta.png` with cls enabled and disabled as a default-model full-pipeline check with local text and score tolerance
 - `te.png` with cls enabled and disabled as a default-model full-pipeline parity check
 - `eslav.jpg` with cls enabled and disabled as a full-pipeline parity check with local score tolerance
 - `en.jpg`
@@ -20,7 +21,7 @@ The current e2e parity fixtures cover:
 - `black_font_color_transparent.png`
 - `white_font_color_transparent.png` as a detection-only geometry check with local corner-drift tolerance
 - `img_exif_orientation.jpg`
-- `ch_doc_server.png` with cls enabled and detection-only
+- `ch_doc_server.png` with cls enabled, cls disabled, and detection-only
 - `test_letterbox_like.jpg`
 - `test_without_det.jpg`
 - `text_vertical_words.png`
@@ -29,7 +30,8 @@ The current e2e parity fixtures cover:
 - `en_rec.jpg`, `el_rec.jpg`, and `devanagari_rec.png` as recognition-crop detection-only geometry checks
 - `en_rec.jpg` as a recognition-only cls/no-cls long English line check
 - `el_rec.jpg` as a recognition-only cls/no-cls Greek-script default-model check
-- `devanagari_rec.png` as a recognition-only no-cls default-model check
+- `devanagari_rec.png` as a recognition-only cls/no-cls default-model check
+- `th_rec.jpg` as a recognition-only cls/no-cls default-model check
 - `text_rec.jpg` as a recognition-only cls/no-cls normal-crop check
 - `text_cls.jpg` as a recognition-only cls/no-cls 180-degree crop check
 - `text_cls.jpg` as a Rust cls/no-cls golden
@@ -41,7 +43,7 @@ Current representative metrics:
 - `ch_en_num.jpg` and `text_det.jpg`: 18/18 lines matched, character accuracy about 0.976, mean center drift about 1.23 px.
 - `ch_en_num.jpg` and `text_det.jpg` detection-only: 18/18 boxes matched, mean center drift about 1.23 px, mean corner drift about 1.45 px.
 - `check_return_word_len.jpeg` detection-only: 28/28 boxes matched, mean center drift about 0.58 px, mean corner drift about 0.92 px.
-- `check_return_word_len.jpeg` full e2e: cls enabled and disabled both match 28/28 lines with local text tolerances; cls has exact text ratio about 0.57 and char accuracy about 0.939, no-cls has exact text ratio about 0.61 and char accuracy about 0.943.
+- `check_return_word_len.jpeg` full e2e: cls enabled and disabled both match 28/28 lines with local text tolerances; cls has exact text ratio about 0.57 and char accuracy about 0.943, no-cls has exact text ratio about 0.61 and char accuracy about 0.948.
 - Cross-language detection-only: `arabic.png` 2/2, `cyrillic.png` 4/4, `devanagari.jpg` 4/4, `japan.jpg` 7/7, and `korean.jpg` 6/6 boxes matched with mean center drift below 0.70 px.
 - `en.jpg`: 5/5 lines matched, exact text match, mean center drift about 0.21 px.
 - `empty_black.jpg`: 0/0 lines matched.
@@ -50,28 +52,31 @@ Current representative metrics:
 - `white_font_color_transparent.png` detection-only: 5/5 boxes matched, mean center drift about 1.36 px; it uses a local corner-drift tolerance for documented offset-geometry differences.
 - `white_font_color_transparent.png` DBPostProcess: 5/5 candidates matched, mean center drift about 1.37 px; it uses local corner/size drift tolerances for documented offset-geometry differences.
 - `img_exif_orientation.jpg`: 1/1 line matched, exact text match, mean center drift about 0.45 px.
-- `ch_doc_server.png` with cls enabled: 2/2 lines matched, exact text match, mean corner drift about 0.45 px.
+- `ch_doc_server.png` with cls enabled: 2/2 lines matched, exact text match, mean corner drift about 0.30 px.
+- `ch_doc_server.png` with cls disabled: 2/2 lines matched, exact text match, mean corner drift about 0.30 px, mean score drift about 0.024.
 - `ch_doc_server.png` detection-only: 2/2 boxes matched, mean center drift about 0.24 px, mean corner drift about 0.45 px.
 - `ch_doc_server.png` DBPostProcess: 2/2 candidates matched with zero geometry drift after output rounding.
 - `check_return_word_len.jpeg` DBPostProcess: 28/28 candidates matched, mean center drift about 0.63 px, mean corner drift about 0.94 px.
 - Cross-language DBPostProcess: `arabic.png` 2/2, `cyrillic.png` 4/4, `devanagari.jpg` 4/4, `japan.jpg` 7/7, and `korean.jpg` 6/6 candidates matched with mean center drift below 0.66 px.
 - Additional script/layout detection-only: `ta.png` 2/2, `th_rec.jpg` 1/1, `te.png` 1/1, and `eslav.jpg` 1/1 boxes matched with mean center drift at or below 0.50 px.
 - Additional script/layout DBPostProcess: `ta.png` 2/2, `th_rec.jpg` 1/1, `te.png` 1/1, and `eslav.jpg` 1/1 candidates matched with mean corner drift at or below 1.21 px.
-- `eslav.jpg` full e2e: cls enabled and disabled both match Python's default-model text and geometry exactly enough for the strict gates; it uses a local `max_mean_score_delta` of 0.13 for the observed 0.112 score drift.
+- `ta.png` full e2e: cls enabled and disabled both match line count and geometry; text uses local tolerance with character accuracy 0.80 and score drift about 0.099.
+- `eslav.jpg` full e2e: cls enabled and disabled both match Python's default-model text and geometry exactly enough for the strict gates; it uses a local `max_mean_score_delta` of 0.13 for the observed 0.101 score drift.
 - Recognition-crop detection-only: `en_rec.jpg` 1/1, `el_rec.jpg` 3/3, and `devanagari_rec.png` 2/2 boxes matched with mean corner drift at or below 0.75 px.
 - Recognition-crop DBPostProcess: `en_rec.jpg` 1/1, `el_rec.jpg` 3/3, and `devanagari_rec.png` 2/2 candidates matched with mean corner drift at or below 0.50 px.
 - `te.png` full e2e: cls enabled and disabled both match Python's default-model output `.` exactly.
-- `test_letterbox_like.jpg`: 2/2 lines matched, character accuracy about 0.994.
+- `test_letterbox_like.jpg`: 2/2 lines matched, character accuracy about 0.987 after recognition preprocessing was aligned with Python; it uses a local text tolerance for whitespace-sensitive long-line drift.
 - `test_without_det.jpg`: 1/1 line matched, exact text match, mean center drift about 0.09 px.
 - `text_vertical_words.png`: 3/3 lines matched, exact text match.
 - `latin.jpg`: 1/1 line matched, exact text match.
 - `latin.jpg` DBPostProcess: 1/1 candidate matched, mean corner drift about 1.21 px.
 - `img_exif_orientation.jpg` DBPostProcess: 1/1 candidate matched, mean corner drift about 0.96 px.
-- `return_word_debug.jpg` with cls enabled: 5/5 lines matched, exact text match, mean center drift about 0.68 px.
+- `return_word_debug.jpg` with cls enabled: 5/5 lines matched, exact text match, mean center drift about 0.76 px.
 - `issue_170.png`: 1/1 line matched, exact text match; the fixture uses a local corner-drift tolerance of 8 px because the current Rust polygon corners differ slightly more than the global 6 px gate while the center and text remain stable.
 - `en_rec.jpg` recognition-only: cls enabled and disabled both match the long English line exactly.
 - `el_rec.jpg` recognition-only: cls enabled and disabled both match `Ωραíο αρ σμεα.` exactly.
-- `devanagari_rec.png` recognition-only no-cls: both Python and Rust output `H`; this is a default-model parity gate, not a language correctness claim.
+- `devanagari_rec.png` recognition-only: cls enabled matches Python's low-score default-model output `和5`, and cls disabled matches `H`; these are default-model parity gates, not language correctness claims.
+- `th_rec.jpg` recognition-only: cls enabled and disabled both match `nsuwnuuzinunavnlunnaunuiula` after aligning recognition resize behavior with Python.
 - `text_rec.jpg` recognition-only: cls enabled and disabled both recognize `韩国小馆`.
 - `text_cls.jpg`: cls enabled recognizes the rotated crop, `--no-cls` leaves it unrecognized.
 
@@ -114,16 +119,16 @@ Current candidate behavior:
 - Rust now matches `black_font_color_transparent.png` in the full OCR pipeline and DBPostProcess gate after alpha-channel images are composited onto a high-contrast background.
 - `white_font_color_transparent.png` now matches the main three text lines in the full OCR pipeline, but Python still emits an additional low-confidence `_` line with score about 0.525 that Rust does not emit.
 - `white_font_color_transparent.png` now matches Python's 5 detection-only boxes and 5 DBPostProcess candidates after the near-threshold DB score tolerance. It is a strict detection/DB gate with local geometry tolerances: mean corner drift is about 10 px and DB mean size drift about 5.2 px.
-- `white_font_color_transparent.png` still does not pass full e2e parity because Python emits the additional low-confidence `_` line while Rust does not.
+- A full-pipeline candidate still fails only on line count: Rust matches the three main text lines exactly, while Python emits the additional low-confidence `_` line.
 
 Impact:
 
 - The black-font case is a strict e2e and DBPostProcess regression.
 - The white-font case now protects detection candidate count and DB score behavior, but the full OCR output remains outside strict e2e gates.
 
-Next step:
+Decision:
 
-- Investigate whether the low-confidence `_` candidate in the white-font image is desirable enough to preserve before adding it as a strict full e2e fixture.
+- Keep `white_font_color_transparent.png` out of strict full e2e gates for now. The Python-only `_` is a low-confidence one-character candidate near the text-score threshold, and preserving it would make the Rust pipeline stricter about a likely false positive rather than protecting the main transparent-text behavior.
 
 ### Low-Contrast Text Coverage
 
@@ -160,25 +165,6 @@ Next step:
 
 - Revisit after crop orientation parity is tightened for slanted detector boxes.
 
-### Tiny Border Text Without Classification
-
-Observed on `ch_doc_server.png`.
-
-Current candidate behavior:
-
-- Rust now matches Python's cls-enabled e2e output after edge-near perspective crops replicate border pixels like OpenCV.
-- The image is now also a strict detection-only geometry gate: 2/2 boxes matched with mean center drift about 0.24 px.
-- With cls disabled, Python recognizes the tiny top-border crop as `1113C`; Rust recognizes it as `1115C`.
-
-Impact:
-
-- The image is a strict cls-enabled e2e and detection-only geometry gate for tiny edge text.
-- It is not a strict no-cls e2e gate yet.
-
-Next step:
-
-- Investigate no-cls crop recognition drift before adding stricter variants.
-
 ### Dense Document Text
 
 Observed on `check_return_word_len.jpeg`.
@@ -188,7 +174,7 @@ Current candidate behavior:
 - The image is now a strict detection-only geometry gate: 28/28 boxes matched, mean center drift about 0.58 px, and mean corner drift about 0.92 px.
 - It is also now a strict DBPostProcess gate: 28/28 candidates matched, mean center drift about 0.63 px, and mean corner drift about 0.94 px.
 - Full-pipeline cls and no-cls fixtures are now strict gates with local text tolerances: `min_exact_text_ratio` 0.55 and `min_char_accuracy` 0.93.
-- Text parity remains below the global gate: cls exact text ratio is about 0.57 with character accuracy about 0.939, and no-cls exact text ratio is about 0.61 with character accuracy about 0.943.
+- Text parity remains below the global gate: cls exact text ratio is about 0.57 with character accuracy about 0.943, and no-cls exact text ratio is about 0.61 with character accuracy about 0.948.
 
 Impact:
 
@@ -205,21 +191,20 @@ Observed on `devanagari_rec.png`, `th_rec.jpg`, `ta.png`, `te.png`, and `eslav.j
 
 Current candidate behavior:
 
-- `devanagari_rec.png` no-cls is now a strict recognition-only gate because Rust and Python both output `H`.
-- `devanagari_rec.png` with cls enabled is not strict: Python emits `和5`, while Rust currently emits no line after the cls path.
-- `th_rec.jpg` detection-only and DBPostProcess geometry are now strict 1/1 gates, but recognition-only is not strict: Python emits `nsuwnuuzinunavnlunnaunuiula`, while Rust emits `nunuuziunavnunnaunuiul`; character accuracy is about 0.815.
+- `devanagari_rec.png` cls/no-cls is now a strict recognition-only gate. Python bypasses `text_score` filtering for recognition-only output, so Rust now does the same when detection is disabled and matches the cls-enabled low-score output `和5` plus the no-cls output `H`.
+- `th_rec.jpg` recognition-only cls/no-cls is now strict. The drift was caused by recognition preprocessing: Python truncates dynamic rec width with `int(...)` and uses OpenCV-style linear resize, while Rust previously used ceiling width and `image`'s triangle resize.
 - `te.png` is now a strict full-pipeline gate because Rust and Python both output `.` with score drift under the current gate.
-- `ta.png` full-pipeline candidate is not strict: detection geometry is stable, but text parity is poor with character accuracy about 0.40.
-- `eslav.jpg` full-pipeline cls/no-cls fixtures are now strict gates with local score tolerance: text and geometry match, while recognition score drift is about 0.112 against the global 0.08 gate.
+- `ta.png` full-pipeline cls/no-cls is now a regression gate with local text and score tolerance. Python emits `    .`, while Rust emits `  Q  .`; character accuracy is 0.80, score drift is about 0.099, and geometry remains stable.
+- `eslav.jpg` full-pipeline cls/no-cls fixtures are now strict gates with local score tolerance: text and geometry match, while recognition score drift is about 0.101 against the global 0.08 gate.
 
 Impact:
 
 - The default PP-OCRv6 small recognition model is useful for parity checks on these crops, but not for claiming language correctness.
-- Cls-sensitive behavior on non-default-language crops still needs tighter investigation before promotion.
+- Tamil full-pipeline text remains a default-model recognition difference, but it is now covered by a local-tolerance regression gate.
 
 Next step:
 
-- Revisit after model-matrix work adds language-specific recognition dictionaries and models, or after cls crop handling differences are narrowed further.
+- Revisit after model-matrix work adds language-specific recognition dictionaries and models, or if default-model recognition preprocessing is tightened further.
 
 ### Recognition Crop Detection Candidates
 
@@ -254,6 +239,12 @@ Observed on `ch_doc_server.png`.
 
 Python uses OpenCV `BORDER_REPLICATE` for perspective crops. Rust now pads edge-near crops with replicated border pixels before warping, which makes the tiny top-border text recognizable with cls enabled.
 
+### Tiny Border Text Without Classification
+
+Observed on `ch_doc_server.png`.
+
+Rust now matches Python's no-cls e2e output on the tiny top-border crop (`1113C`). The image is a strict cls-disabled e2e gate alongside the cls-enabled and detection-only variants.
+
 ### Tiny Edge DBPostProcess Candidate Filtering
 
 Observed on `ch_doc_server.png`.
@@ -264,7 +255,7 @@ Rust now rounds output boxes before the final integer-size filter, uses a small 
 
 Observed on `test_letterbox_like.jpg`.
 
-Previous Rust output split the image into 11 smaller fragments. The root cause was not DBPostProcess itself: the DB fixture already matched Python. The pipeline was missing Python's vertical padding before detection. After adding the same padding step, Rust now outputs 2 lines like Python.
+Previous Rust output split the image into 11 smaller fragments. The root cause was not DBPostProcess itself: the DB fixture already matched Python. The pipeline was missing Python's vertical padding before detection. After adding the same padding step, Rust now outputs 2 lines like Python. The fixture uses a local text tolerance because the current Python-aligned recognition preprocessing leaves only whitespace-sensitive long-line drift.
 
 ### Vertical Text
 

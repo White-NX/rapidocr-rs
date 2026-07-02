@@ -1,8 +1,10 @@
+use std::time::Instant;
+
 use anyhow::{bail, Context, Result};
 use image::{imageops, RgbImage};
 use ndarray::{s, Array4, Ix2};
 
-use crate::{config::ClsConfig, inference::OnnxSession};
+use crate::{config::ClsConfig, inference::OnnxSession, types::OcrTimings};
 
 #[derive(Debug, Clone)]
 pub struct ClsResult {
@@ -28,8 +30,16 @@ impl TextClassifier {
     }
 
     pub fn classify(&mut self, imgs: &[RgbImage]) -> Result<Vec<ClsResult>> {
+        Ok(self.classify_timed(imgs)?.results)
+    }
+
+    pub fn classify_timed(&mut self, imgs: &[RgbImage]) -> Result<ClassifyResult> {
+        let mut timings = OcrTimings::default();
         if imgs.is_empty() {
-            return Ok(Vec::new());
+            return Ok(ClassifyResult {
+                results: Vec::new(),
+                timings,
+            });
         }
 
         let mut results = Vec::with_capacity(imgs.len());
@@ -39,13 +49,19 @@ impl TextClassifier {
                 bail!("only 3-channel classification input is supported");
             }
 
+            let start = Instant::now();
             let mut batch = Array4::<f32>::zeros((chunk.len(), channels, img_h, img_w));
             for (i, img) in chunk.iter().enumerate() {
                 let norm = self.resize_norm_img(img)?;
                 batch.slice_mut(s![i, .., .., ..]).assign(&norm);
             }
+            timings.cls_preprocess_ms += elapsed_ms(start);
 
+            let start = Instant::now();
             let pred = self.session.run_f32(&batch)?;
+            timings.cls_inference_ms += elapsed_ms(start);
+
+            let start = Instant::now();
             let pred = pred.into_dimensionality::<Ix2>()?;
             for row in pred.outer_iter() {
                 let (idx, score) = row
@@ -62,23 +78,38 @@ impl TextClassifier {
                     .unwrap_or_else(|| idx.to_string());
                 results.push(ClsResult { label, score });
             }
+            timings.cls_postprocess_ms += elapsed_ms(start);
         }
-        Ok(results)
+        Ok(ClassifyResult { results, timings })
     }
 
     pub fn classify_and_rotate(&mut self, imgs: &[RgbImage]) -> Result<Vec<RgbImage>> {
-        let cls = self.classify(imgs)?;
-        Ok(imgs
-            .iter()
-            .zip(cls)
-            .map(|(img, cls)| {
-                if cls.label.contains("180") && cls.score > self.cfg.thresh {
-                    imageops::rotate180(img)
-                } else {
-                    img.clone()
-                }
-            })
-            .collect())
+        Ok(self.classify_and_rotate_timed(imgs)?.imgs)
+    }
+
+    pub fn classify_and_rotate_timed(
+        &mut self,
+        imgs: &[RgbImage],
+    ) -> Result<RotatedClassifyResult> {
+        self.classify_and_rotate_owned_timed(imgs.to_vec())
+    }
+
+    pub fn classify_and_rotate_owned_timed(
+        &mut self,
+        mut imgs: Vec<RgbImage>,
+    ) -> Result<RotatedClassifyResult> {
+        let ClassifyResult {
+            results: cls,
+            mut timings,
+        } = self.classify_timed(&imgs)?;
+        let start = Instant::now();
+        for (img, cls) in imgs.iter_mut().zip(cls) {
+            if cls.label.contains("180") && cls.score > self.cfg.thresh {
+                *img = imageops::rotate180(img);
+            }
+        }
+        timings.cls_postprocess_ms += elapsed_ms(start);
+        Ok(RotatedClassifyResult { imgs, timings })
     }
 
     fn resize_norm_img(&self, img: &RgbImage) -> Result<ndarray::Array3<f32>> {
@@ -104,4 +135,18 @@ impl TextClassifier {
         }
         Ok(out)
     }
+}
+
+pub struct ClassifyResult {
+    pub results: Vec<ClsResult>,
+    pub timings: OcrTimings,
+}
+
+pub struct RotatedClassifyResult {
+    pub imgs: Vec<RgbImage>,
+    pub timings: OcrTimings,
+}
+
+fn elapsed_ms(start: Instant) -> f64 {
+    start.elapsed().as_secs_f64() * 1000.0
 }

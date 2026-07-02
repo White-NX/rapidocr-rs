@@ -93,11 +93,11 @@ impl Quad {
     }
 
     pub fn crop_width(&self) -> u32 {
-        self.width_f32().round().max(1.0) as u32
+        self.width_f32().floor().max(1.0) as u32
     }
 
     pub fn crop_height(&self) -> u32 {
-        self.height_f32().round().max(1.0) as u32
+        self.height_f32().floor().max(1.0) as u32
     }
 
     pub fn width_f32(&self) -> f32 {
@@ -191,6 +191,72 @@ pub struct OcrLine {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OcrOutput {
     pub lines: Vec<OcrLine>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct OcrTimings {
+    pub image_load_ms: f64,
+    pub pipeline_preprocess_ms: f64,
+    pub det_preprocess_ms: f64,
+    pub det_inference_ms: f64,
+    pub det_postprocess_ms: f64,
+    pub crop_ms: f64,
+    pub cls_preprocess_ms: f64,
+    pub cls_inference_ms: f64,
+    pub cls_postprocess_ms: f64,
+    pub rec_preprocess_ms: f64,
+    pub rec_inference_ms: f64,
+    pub rec_decode_ms: f64,
+    pub output_filter_ms: f64,
+    pub total_ms: f64,
+}
+
+impl OcrTimings {
+    pub fn add_assign(&mut self, other: &Self) {
+        self.image_load_ms += other.image_load_ms;
+        self.pipeline_preprocess_ms += other.pipeline_preprocess_ms;
+        self.det_preprocess_ms += other.det_preprocess_ms;
+        self.det_inference_ms += other.det_inference_ms;
+        self.det_postprocess_ms += other.det_postprocess_ms;
+        self.crop_ms += other.crop_ms;
+        self.cls_preprocess_ms += other.cls_preprocess_ms;
+        self.cls_inference_ms += other.cls_inference_ms;
+        self.cls_postprocess_ms += other.cls_postprocess_ms;
+        self.rec_preprocess_ms += other.rec_preprocess_ms;
+        self.rec_inference_ms += other.rec_inference_ms;
+        self.rec_decode_ms += other.rec_decode_ms;
+        self.output_filter_ms += other.output_filter_ms;
+        self.total_ms += other.total_ms;
+    }
+
+    pub fn div(self, denominator: f64) -> Self {
+        if denominator == 0.0 {
+            return self;
+        }
+
+        Self {
+            image_load_ms: self.image_load_ms / denominator,
+            pipeline_preprocess_ms: self.pipeline_preprocess_ms / denominator,
+            det_preprocess_ms: self.det_preprocess_ms / denominator,
+            det_inference_ms: self.det_inference_ms / denominator,
+            det_postprocess_ms: self.det_postprocess_ms / denominator,
+            crop_ms: self.crop_ms / denominator,
+            cls_preprocess_ms: self.cls_preprocess_ms / denominator,
+            cls_inference_ms: self.cls_inference_ms / denominator,
+            cls_postprocess_ms: self.cls_postprocess_ms / denominator,
+            rec_preprocess_ms: self.rec_preprocess_ms / denominator,
+            rec_inference_ms: self.rec_inference_ms / denominator,
+            rec_decode_ms: self.rec_decode_ms / denominator,
+            output_filter_ms: self.output_filter_ms / denominator,
+            total_ms: self.total_ms / denominator,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TimedOcrOutput {
+    pub output: OcrOutput,
+    pub timings: OcrTimings,
 }
 
 #[cfg(test)]

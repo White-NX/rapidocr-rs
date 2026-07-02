@@ -214,6 +214,7 @@ The current e2e fixtures cover:
 - `check_return_word_len.jpeg` with cls enabled, cls disabled, and detection-only as dense-text checks with documented local text tolerance.
 - `arabic.png`, `cyrillic.png`, `devanagari.jpg`, `japan.jpg`, and `korean.jpg` as cross-language detection-only geometry checks.
 - `ta.png`, `th_rec.jpg`, `te.png`, and `eslav.jpg` as additional script/layout detection-only geometry checks.
+- `ta.png` with cls enabled and disabled as a default-model full-pipeline check with documented local text and score tolerance.
 - `te.png` with cls enabled and disabled as a default-model full-pipeline parity check.
 - `eslav.jpg` with cls enabled and disabled as a full-pipeline parity check with documented local score tolerance.
 - `en.jpg` with cls enabled and disabled.
@@ -222,8 +223,8 @@ The current e2e fixtures cover:
 - `black_font_color_transparent.png` with cls enabled and disabled.
 - `white_font_color_transparent.png` as a detection-only geometry check with documented local corner-drift tolerance.
 - `img_exif_orientation.jpg` with cls enabled and disabled.
-- `ch_doc_server.png` with cls enabled and detection-only.
-- `test_letterbox_like.jpg` with cls enabled and disabled.
+- `ch_doc_server.png` with cls enabled, cls disabled, and detection-only.
+- `test_letterbox_like.jpg` with cls enabled and disabled, with documented local text tolerance.
 - `test_without_det.jpg` with cls enabled and disabled.
 - `return_word_debug.jpg` with cls enabled.
 - `text_vertical_words.png` with cls enabled and disabled.
@@ -232,7 +233,8 @@ The current e2e fixtures cover:
 - `en_rec.jpg`, `el_rec.jpg`, and `devanagari_rec.png` as recognition-crop detection-only geometry checks.
 - `en_rec.jpg` recognition-only with cls enabled and disabled.
 - `el_rec.jpg` recognition-only with cls enabled and disabled.
-- `devanagari_rec.png` recognition-only with cls disabled.
+- `devanagari_rec.png` recognition-only with cls enabled and disabled.
+- `th_rec.jpg` recognition-only with cls enabled and disabled.
 - `text_rec.jpg` recognition-only with cls enabled and disabled.
 - `text_cls.jpg` recognition-only with cls enabled and disabled.
 - `text_cls.jpg` as a Rust golden for the cls/no-cls pipeline switch.
@@ -258,6 +260,12 @@ Run the Rust CLI in a hot loop, reusing the loaded OCR pipeline:
 cargo run --release -p rapidocr-cli -- --image "$env:RAPIDOCR_PYTHON_REPO\python\tests\test_files\ch_en_num.jpg" --model-dir models --no-download --repeat 20 --quiet
 ```
 
+Emit the Rust timing summary as JSON:
+
+```powershell
+cargo run --release -p rapidocr-cli -- --image "$env:RAPIDOCR_PYTHON_REPO\python\tests\test_files\ch_en_num.jpg" --model-dir models --no-download --repeat 20 --benchmark-json
+```
+
 Compare Rust CLI and Python RapidOCR hot-loop timings:
 
 ```powershell
@@ -265,4 +273,6 @@ python .\tools\bench_e2e.py --repeat 20 --image python\tests\test_files\ch_en_nu
 ```
 
 Use `--no-cls` to benchmark the pipeline without cls.
-Use `--out target\benchmark.md` to write the measured rows as Markdown. The curated current baseline is recorded in `benchmark-baseline.md`.
+Use `--out target\benchmark.md` to write the measured rows as Markdown.
+
+The benchmark script records model load time, end-to-end hot-loop time, peak RSS when `psutil` is installed, and stage summaries for det/cls/rec. Rust rows also include `det_postprocess_ms` from `OcrTimings`; the Python timing surface does not split DB postprocess separately. The curated current baseline is recorded in `benchmark-baseline.md`.

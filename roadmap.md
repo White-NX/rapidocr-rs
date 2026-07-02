@@ -15,7 +15,7 @@ This roadmap tracks the Rust migration of RapidOCR. The current direction is not
 - End-to-end golden/parity tests with output metrics and per-fixture tolerances for documented geometry gaps.
 - Structured public `RapidOcrConfig` with `[pipeline]` det/cls/rec switches.
 - Explicit default model metadata and `ModelCache` download/cache API.
-- Initial end-to-end benchmark baseline against Python ONNX Runtime.
+- Stage-level benchmark baseline against Python ONNX Runtime, including model load time, hot-loop latency, peak RSS sampling, and Rust DB postprocess timing.
 
 The project is currently usable for validating the default PPOCRv6 det/rec + PPOCRv4 cls ONNX pipeline, but it is not yet a complete Rust replacement for RapidOCR.
 
@@ -52,7 +52,7 @@ Completion criteria:
 Remaining work:
 
 - Add more e2e fixture images, especially noisy, small-text, transparent, and additional non-Chinese cases.
-- Split benchmark numbers by model load, det, cls, rec, postprocess, and memory usage.
+- Broaden benchmark coverage beyond the current default-image baseline when performance work resumes.
 - Continue documenting known parity gaps as new candidate fixtures are tested.
 
 ## Phase 2: Public API And Configuration
@@ -124,6 +124,7 @@ Current strict e2e coverage:
 - `check_return_word_len.jpeg` with cls enabled, cls disabled, and detection-only as dense-text checks with documented local text tolerance.
 - `arabic.png`, `cyrillic.png`, `devanagari.jpg`, `japan.jpg`, and `korean.jpg` as cross-language detection-only geometry checks.
 - `ta.png`, `th_rec.jpg`, `te.png`, and `eslav.jpg` as additional script/layout detection-only geometry checks.
+- `ta.png` with cls enabled and disabled as a default-model full-pipeline check with documented local text and score tolerance.
 - `te.png` with cls enabled and disabled as a default-model full-pipeline parity check.
 - `eslav.jpg` with cls enabled and disabled as a full-pipeline parity check with documented local score tolerance.
 - `en.jpg` and `latin.jpg` with cls enabled and disabled.
@@ -131,15 +132,16 @@ Current strict e2e coverage:
 - `black_font_color_transparent.png` with cls enabled and disabled for transparent-background handling.
 - `white_font_color_transparent.png` as a detection-only geometry check with documented local corner-drift tolerance.
 - `img_exif_orientation.jpg` with cls enabled and disabled for EXIF orientation handling.
-- `ch_doc_server.png` with cls enabled and detection-only for tiny edge text.
-- `test_letterbox_like.jpg` and `test_without_det.jpg` with cls enabled and disabled.
+- `ch_doc_server.png` with cls enabled, cls disabled, and detection-only for tiny edge text.
+- `test_letterbox_like.jpg` with cls enabled and disabled using documented local text tolerance, and `test_without_det.jpg` with cls enabled and disabled.
 - `return_word_debug.jpg` with cls enabled for slanted text and digit-string recognition.
 - `text_vertical_words.png` with cls enabled and disabled.
 - `issue_170.png` with cls enabled and disabled; this fixture uses a documented local corner-drift tolerance.
 - `en_rec.jpg`, `el_rec.jpg`, and `devanagari_rec.png` as recognition-crop detection-only geometry checks.
 - `en_rec.jpg` as a recognition-only long English line cls/no-cls check.
 - `el_rec.jpg` as a recognition-only Greek line cls/no-cls check.
-- `devanagari_rec.png` as a recognition-only no-cls check.
+- `devanagari_rec.png` as a recognition-only cls/no-cls check.
+- `th_rec.jpg` as a recognition-only cls/no-cls check.
 - `text_rec.jpg` as a recognition-only normal-crop cls/no-cls check.
 - `text_cls.jpg` as a recognition-only 180-degree cls/no-cls check.
 - `text_cls.jpg` as a Rust golden for the cls/no-cls pipeline switch.
@@ -191,7 +193,8 @@ Tasks:
   - 180-degree text should be rotated
   - `--no-cls` should preserve unrotated crops
   - Greek rec crop matches with cls enabled and disabled
-  - Devanagari rec crop matches with cls disabled while cls-enabled behavior remains documented
+  - Devanagari rec crop matches with cls enabled and disabled
+  - Thai rec crop matches with cls enabled and disabled
 - Done for detection-only e2e fixtures:
   - `ch_en_num.jpg`
   - `text_det.jpg`
@@ -213,7 +216,7 @@ Tasks:
 - Done: full-pipeline `eslav.jpg` cls/no-cls fixtures with a local score-drift gate while text and geometry remain strict.
 - In progress: add regression fixtures for DBPostProcess edge cases:
   - Done: empty images
-  - Partial: dense small text; `ch_doc_server.png` is an e2e cls, detection-only, and DBPostProcess gate, and `check_return_word_len.jpeg` is now a cls/no-cls e2e, detection-only, and DBPostProcess gate with local text tolerance. The remaining dense/tiny-text gap is `ch_doc_server.png` no-cls text drift.
+  - Done: dense small text; `ch_doc_server.png` is an e2e cls/no-cls, detection-only, and DBPostProcess gate, and `check_return_word_len.jpeg` is now a cls/no-cls e2e, detection-only, and DBPostProcess gate with local text tolerance.
   - Done: vertical text
   - Done: slanted text
   - Done: Latin and EXIF-oriented DBPostProcess layout fixtures.
@@ -221,7 +224,7 @@ Tasks:
   - Done: representative cross-language DBPostProcess fixtures for Arabic, Cyrillic, Devanagari, Japanese, and Korean text layout.
   - Done: additional script/layout DBPostProcess fixtures for Tamil, Thai crop, Telugu, and Eslav images.
   - Done: recognition-crop DBPostProcess fixtures for English, Greek, and Devanagari crops.
-  - Partial: transparent images; `black_font_color_transparent.png` is both a DBPostProcess and e2e gate, and `white_font_color_transparent.png` is a DBPostProcess and detection-only e2e gate with documented local geometry tolerance while its full e2e low-confidence recognition line remains a gap.
+  - Partial: transparent images; `black_font_color_transparent.png` is both a DBPostProcess and e2e gate, and `white_font_color_transparent.png` is a DBPostProcess and detection-only e2e gate with documented local geometry tolerance. Its full e2e Python-only low-confidence `_` line remains a documented difference rather than a strict gate.
 
 Completion criteria:
 
@@ -235,28 +238,30 @@ Goal: understand whether Rust improves deployability and runtime characteristics
 
 Priority: medium.
 
-Status: started.
+Status: complete for the current default-pipeline baseline; future work can broaden the image, platform, and model matrix.
 
 Tasks:
 
 - Done: add repeatable benchmark commands through `tools/bench_e2e.py`.
-- Done: record an initial hot-loop baseline in `benchmark-baseline.md`.
+- Done: record a stage-level hot-loop baseline in `benchmark-baseline.md`.
 - Compare Rust `ort` vs Python `onnxruntime` on:
-  - Todo: model load time
-  - Todo: det latency
-  - Todo: cls latency
-  - Todo: rec latency
-  - Started: end-to-end latency
-  - Todo: memory usage
-- Measure postprocess cost separately from ONNX inference.
-- Avoid unnecessary image and tensor copies.
-- Consider batch behavior for rec and cls.
+  - Done: model load time
+  - Done: det latency
+  - Done: cls latency
+  - Done: rec latency
+  - Done: end-to-end latency
+  - Done: memory usage through optional `psutil` RSS sampling
+- Done: measure Rust DB postprocess cost separately from ONNX inference.
+- Done: remove two obvious avoidable copies in the measured default path:
+  - cls rotation keeps owned crops and only allocates replacement images for rotated crops.
+  - recognition decode reads logits through a view instead of copying each slice.
+- Done for the current baseline: include the configured rec and cls batch paths in stage timings. Defer batch-size tuning until multi-image benchmark coverage exists.
 
 Completion criteria:
 
-- Benchmark results are documented.
-- Major bottlenecks are identified.
-- Obvious avoidable copies are removed or justified.
+- Done: benchmark results are documented in `benchmark-baseline.md`.
+- Done: major bottlenecks are identified there; detection and recognition dominate hot-loop time, while Rust RSS is higher than Python on the local run.
+- Done: obvious avoidable copies were removed, and remaining copies are tied to image ownership, crop generation, resize/normalization tensors, or actual rotation output.
 
 ## Phase 6: Model Matrix
 
@@ -313,12 +318,10 @@ Completion criteria:
 
 ## Recommended Next Step
 
-The next best step is to pause broad fixture expansion and focus on the remaining documented parity gaps:
+The next best step is to use the Phase 5 baseline as a guardrail and move to the model-matrix work in Phase 6:
 
-1. Investigate `ch_doc_server.png` with cls disabled, where tiny edge text still drifts from Python.
-2. Decide whether `white_font_color_transparent.png` should preserve Python's low-confidence `_` full-pipeline candidate or remain a documented difference.
-3. Revisit language/default-model recognition gaps for `devanagari_rec.png` with cls enabled, `th_rec.jpg` recognition-only, and `ta.png` full pipeline.
-4. Keep `parity-gaps.md` updated with rejected or deferred candidate fixtures and their observed metrics.
-5. Resume Phase 5 benchmarking after Phase 4 work pauses, especially model load, stage-level latency, postprocess cost, and memory usage.
+1. Keep `parity-gaps.md` updated with rejected or deferred candidate fixtures and their observed metrics.
+2. Keep `benchmark-baseline.md` current when timing-sensitive code changes.
+3. Start Phase 6 by making additional model metadata and recognition dictionaries data-driven, then validate at least one non-default recognition language.
 
-This keeps the project moving from a stable default API and repository layout toward broader parity and measured performance work without prematurely expanding the backend/model matrix.
+This keeps the project moving from the stable default API, parity fixtures, and measured default performance toward broader model coverage without adding new backends first.
