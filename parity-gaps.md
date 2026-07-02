@@ -11,6 +11,8 @@ The current e2e parity fixtures cover:
 - `en.jpg`
 - `empty_black.jpg`
 - `short.png`
+- `black_font_color_transparent.png`
+- `img_exif_orientation.jpg`
 - `test_letterbox_like.jpg`
 - `test_without_det.jpg`
 - `text_vertical_words.png`
@@ -28,6 +30,8 @@ Current representative metrics:
 - `en.jpg`: 5/5 lines matched, exact text match, mean center drift about 0.21 px.
 - `empty_black.jpg`: 0/0 lines matched.
 - `short.png`: 0/0 lines matched.
+- `black_font_color_transparent.png`: 3/3 lines matched, exact text match, mean center drift about 1.03 px.
+- `img_exif_orientation.jpg`: 1/1 line matched, exact text match, mean center drift about 0.45 px.
 - `test_letterbox_like.jpg`: 2/2 lines matched, character accuracy about 0.994.
 - `test_without_det.jpg`: 1/1 line matched, exact text match, mean center drift about 0.09 px.
 - `text_vertical_words.png`: 3/3 lines matched, exact text match.
@@ -72,19 +76,19 @@ Observed on `black_font_color_transparent.png` and `white_font_color_transparent
 
 Current candidate behavior:
 
-- Python detects 3-4 short lines such as `中国`, `我`, and `是`.
-- Rust currently merges the visible text into one large line in the full OCR pipeline.
-- `black_font_color_transparent.png` now passes the DBPostProcess fixture gate by itself: 3/3 candidates matched, mean corner drift about 1.10 px.
-- `white_font_color_transparent.png` still does not pass DBPostProcess parity: Python emits 5 candidates while Rust emits 4, with mean corner drift about 12 px on the matched candidates.
+- Python detects short lines such as `中国`, `我`, and `是`.
+- Rust now matches `black_font_color_transparent.png` in the full OCR pipeline and DBPostProcess gate after alpha-channel images are composited onto a high-contrast background.
+- `white_font_color_transparent.png` now matches the main three text lines in the full OCR pipeline, but Python still emits an additional low-confidence `_` line with score about 0.525 that Rust does not emit.
+- `white_font_color_transparent.png` also still does not pass DBPostProcess parity: Python emits 5 candidates while Rust emits 4, with mean corner drift about 12 px on the matched candidates.
 
 Impact:
 
-- The full-pipeline line count does not match, so these images are not strict e2e gates yet.
-- The black-font case is now useful as a strict DBPostProcess regression while the full-pipeline preprocessing/recognition behavior remains unresolved.
+- The black-font case is now a strict e2e and DBPostProcess regression.
+- The white-font case remains useful for low-confidence and small transparent candidate work, but is not a strict gate yet.
 
 Next step:
 
-- Investigate image loading and transparent-background preprocessing before adding full e2e transparent fixtures.
+- Investigate whether the low-confidence `_` candidate in the white-font image is desirable enough to preserve before adding it as a strict fixture.
 
 ### Slanted Text Without Classification
 
@@ -123,24 +127,13 @@ Next step:
 
 - Investigate small candidate filtering and text-score filtering before adding this image.
 
+## Resolved Differences
+
 ### EXIF-Oriented Text Image
 
 Observed on `img_exif_orientation.jpg`.
 
-Current candidate behavior:
-
-- With cls enabled, Rust recognizes the text, but box center/corner drift is above the current strict geometry gates.
-- With cls disabled, Rust recognition degrades on the rotated crop.
-
-Impact:
-
-- The image is useful for cls and image orientation behavior, but it is not yet a stable strict parity fixture.
-
-Next step:
-
-- Decide whether EXIF orientation should be normalized before detection, and add a focused fixture after the intended behavior is explicit.
-
-## Resolved Differences
+Python normalizes EXIF orientation through `ImageOps.exif_transpose`. Rust now reads decoder orientation metadata and applies it before OCR. The image is a strict e2e fixture with cls enabled and disabled.
 
 ### Letterbox-Like Long Lines
 

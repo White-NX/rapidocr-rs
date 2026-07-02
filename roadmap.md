@@ -123,6 +123,8 @@ Current strict e2e coverage:
 - `ch_en_num.jpg` and `text_det.jpg` with cls enabled and disabled.
 - `en.jpg` and `latin.jpg` with cls enabled and disabled.
 - `empty_black.jpg` and `short.png` with cls enabled and disabled.
+- `black_font_color_transparent.png` with cls enabled and disabled for transparent-background handling.
+- `img_exif_orientation.jpg` with cls enabled and disabled for EXIF orientation handling.
 - `test_letterbox_like.jpg` and `test_without_det.jpg` with cls enabled and disabled.
 - `return_word_debug.jpg` with cls enabled for slanted text and digit-string recognition.
 - `text_vertical_words.png` with cls enabled and disabled.
@@ -166,7 +168,7 @@ Tasks:
   - Done: vertical text
   - Done: slanted text
   - low contrast text
-  - Partial: transparent images; `black_font_color_transparent.png` is a DBPostProcess gate, while `white_font_color_transparent.png` still has a documented DB candidate-count gap.
+  - Partial: transparent images; `black_font_color_transparent.png` is now both a DBPostProcess and e2e gate, while `white_font_color_transparent.png` still has a documented low-confidence candidate gap.
 
 Completion criteria:
 

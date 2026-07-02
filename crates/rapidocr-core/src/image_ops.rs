@@ -1,7 +1,10 @@
 use std::path::Path;
 
 use anyhow::{bail, Context, Result};
-use image::{imageops, ImageBuffer, Rgb, RgbImage};
+use image::{
+    imageops, metadata::Orientation, DynamicImage, ImageBuffer, ImageDecoder, ImageReader, Rgb,
+    RgbImage, RgbaImage,
+};
 use imageproc::geometric_transformations::{warp_into, Interpolation, Projection};
 use ndarray::Array4;
 
@@ -15,9 +18,58 @@ pub fn load_rgb_image(path: impl AsRef<Path>) -> Result<RgbImage> {
     if !path.is_file() {
         bail!("image path is not a file: {}", path.display());
     }
-    Ok(image::open(path)
-        .with_context(|| format!("failed to decode image {}", path.display()))?
-        .to_rgb8())
+    let mut decoder = ImageReader::open(path)
+        .with_context(|| format!("failed to open image {}", path.display()))?
+        .into_decoder()
+        .with_context(|| format!("failed to decode image {}", path.display()))?;
+    let orientation = decoder.orientation().unwrap_or(Orientation::NoTransforms);
+    let mut image = image::DynamicImage::from_decoder(decoder)
+        .with_context(|| format!("failed to decode image {}", path.display()))?;
+    image.apply_orientation(orientation);
+    Ok(to_rgb_with_alpha_background(&image))
+}
+
+fn to_rgb_with_alpha_background(image: &DynamicImage) -> RgbImage {
+    if !image.has_alpha() {
+        return image.to_rgb8();
+    }
+
+    composite_alpha_to_contrast_background(&image.to_rgba8())
+}
+
+fn composite_alpha_to_contrast_background(image: &RgbaImage) -> RgbImage {
+    let mut luminance_sum = 0.0f32;
+    let mut non_transparent_count = 0usize;
+    for pixel in image.pixels() {
+        if pixel[3] == 0 {
+            continue;
+        }
+        luminance_sum +=
+            0.299 * pixel[0] as f32 + 0.587 * pixel[1] as f32 + 0.114 * pixel[2] as f32;
+        non_transparent_count += 1;
+    }
+
+    let bg = if non_transparent_count == 0 || luminance_sum / (non_transparent_count as f32) < 128.0
+    {
+        [255.0, 255.0, 255.0]
+    } else {
+        [0.0, 0.0, 0.0]
+    };
+
+    let mut out = RgbImage::new(image.width(), image.height());
+    for (x, y, pixel) in image.enumerate_pixels() {
+        let alpha = pixel[3] as f32 / 255.0;
+        out.put_pixel(
+            x,
+            y,
+            Rgb([
+                (pixel[0] as f32 * alpha + bg[0] * (1.0 - alpha)) as u8,
+                (pixel[1] as f32 * alpha + bg[1] * (1.0 - alpha)) as u8,
+                (pixel[2] as f32 * alpha + bg[2] * (1.0 - alpha)) as u8,
+            ]),
+        );
+    }
+    out
 }
 
 pub fn resize_image_within_bounds(
@@ -179,4 +231,30 @@ pub fn crop_perspective(img: &RgbImage, bbox: &Quad) -> Result<RgbImage> {
 
 pub fn round_to_multiple(value: u32, divisor: u32) -> u32 {
     ((value + divisor / 2) / divisor) * divisor
+}
+
+#[cfg(test)]
+mod tests {
+    use image::{Rgba, RgbaImage};
+
+    use super::*;
+
+    #[test]
+    fn alpha_images_are_composited_onto_contrast_background() {
+        let mut black_text = RgbaImage::from_pixel(2, 1, Rgba([0, 0, 0, 0]));
+        black_text.put_pixel(0, 0, Rgba([0, 0, 0, 255]));
+
+        let black_out = composite_alpha_to_contrast_background(&black_text);
+
+        assert_eq!(black_out.get_pixel(0, 0).0, [0, 0, 0]);
+        assert_eq!(black_out.get_pixel(1, 0).0, [255, 255, 255]);
+
+        let mut white_text = RgbaImage::from_pixel(2, 1, Rgba([0, 0, 0, 0]));
+        white_text.put_pixel(0, 0, Rgba([255, 255, 255, 255]));
+
+        let white_out = composite_alpha_to_contrast_background(&white_text);
+
+        assert_eq!(white_out.get_pixel(0, 0).0, [255, 255, 255]);
+        assert_eq!(white_out.get_pixel(1, 0).0, [0, 0, 0]);
+    }
 }
