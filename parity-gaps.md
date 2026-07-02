@@ -23,6 +23,8 @@ The current e2e parity fixtures cover:
 - `latin.jpg`
 - `return_word_debug.jpg` with cls enabled
 - `en_rec.jpg` as a recognition-only cls/no-cls long English line check
+- `el_rec.jpg` as a recognition-only cls/no-cls Greek-script default-model check
+- `devanagari_rec.png` as a recognition-only no-cls default-model check
 - `text_rec.jpg` as a recognition-only cls/no-cls normal-crop check
 - `text_cls.jpg` as a recognition-only cls/no-cls 180-degree crop check
 - `text_cls.jpg` as a Rust cls/no-cls golden
@@ -52,6 +54,8 @@ Current representative metrics:
 - `return_word_debug.jpg` with cls enabled: 5/5 lines matched, exact text match, mean center drift about 0.68 px.
 - `issue_170.png`: 1/1 line matched, exact text match; the fixture uses a local corner-drift tolerance of 8 px because the current Rust polygon corners differ slightly more than the global 6 px gate while the center and text remain stable.
 - `en_rec.jpg` recognition-only: cls enabled and disabled both match the long English line exactly.
+- `el_rec.jpg` recognition-only: cls enabled and disabled both match `Ωραíο αρ σμεα.` exactly.
+- `devanagari_rec.png` recognition-only no-cls: both Python and Rust output `H`; this is a default-model parity gate, not a language correctness claim.
 - `text_rec.jpg` recognition-only: cls enabled and disabled both recognize `韩国小馆`.
 - `text_cls.jpg`: cls enabled recognizes the rotated crop, `--no-cls` leaves it unrecognized.
 
@@ -161,6 +165,25 @@ Impact:
 Next step:
 
 - Use this image while investigating dense small-text recognition differences, then promote it once text parity improves or a focused tolerance is justified.
+
+### Language-Specific Recognition Crops
+
+Observed on `devanagari_rec.png` and `th_rec.jpg`.
+
+Current candidate behavior:
+
+- `devanagari_rec.png` no-cls is now a strict recognition-only gate because Rust and Python both output `H`.
+- `devanagari_rec.png` with cls enabled is not strict: Python emits `和5`, while Rust currently emits no line after the cls path.
+- `th_rec.jpg` recognition-only is not strict: Python emits `nsuwnuuzinunavnlunnaunuiula`, while Rust emits `nunuuziunavnunnaunuiul`; character accuracy is about 0.815.
+
+Impact:
+
+- The default PP-OCRv6 small recognition model is useful for parity checks on these crops, but not for claiming language correctness.
+- Cls-sensitive behavior on non-default-language crops still needs tighter investigation before promotion.
+
+Next step:
+
+- Revisit after model-matrix work adds language-specific recognition dictionaries and models, or after cls crop handling differences are narrowed further.
 
 ## Resolved Differences
 

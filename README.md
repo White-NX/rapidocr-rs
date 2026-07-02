@@ -214,6 +214,8 @@ The current e2e fixtures cover:
 - `latin.jpg` with cls enabled and disabled.
 - `issue_170.png` with cls enabled and disabled.
 - `en_rec.jpg` recognition-only with cls enabled and disabled.
+- `el_rec.jpg` recognition-only with cls enabled and disabled.
+- `devanagari_rec.png` recognition-only with cls disabled.
 - `text_rec.jpg` recognition-only with cls enabled and disabled.
 - `text_cls.jpg` recognition-only with cls enabled and disabled.
 - `text_cls.jpg` as a Rust golden for the cls/no-cls pipeline switch.

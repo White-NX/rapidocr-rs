@@ -133,6 +133,8 @@ Current strict e2e coverage:
 - `text_vertical_words.png` with cls enabled and disabled.
 - `issue_170.png` with cls enabled and disabled; this fixture uses a documented local corner-drift tolerance.
 - `en_rec.jpg` as a recognition-only long English line cls/no-cls check.
+- `el_rec.jpg` as a recognition-only Greek line cls/no-cls check.
+- `devanagari_rec.png` as a recognition-only no-cls check.
 - `text_rec.jpg` as a recognition-only normal-crop cls/no-cls check.
 - `text_cls.jpg` as a recognition-only 180-degree cls/no-cls check.
 - `text_cls.jpg` as a Rust golden for the cls/no-cls pipeline switch.
@@ -171,6 +173,8 @@ Tasks:
   - normal text should not be rotated
   - 180-degree text should be rotated
   - `--no-cls` should preserve unrotated crops
+  - Greek rec crop matches with cls enabled and disabled
+  - Devanagari rec crop matches with cls disabled while cls-enabled behavior remains documented
 - Done for detection-only e2e fixtures:
   - `ch_en_num.jpg`
   - `text_det.jpg`

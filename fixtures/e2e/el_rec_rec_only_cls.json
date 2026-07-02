@@ -1,0 +1,34 @@
+{
+  "source": "python-rapidocr",
+  "image": "python/tests/test_files/el_rec.jpg",
+  "use_cls": true,
+  "lines": [
+    {
+      "bbox": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          264.0,
+          0.0
+        ],
+        [
+          264.0,
+          49.0
+        ],
+        [
+          0.0,
+          49.0
+        ]
+      ],
+      "text": "Ωραíο αρ σμεα.",
+      "score": 0.86269
+    }
+  ],
+  "pipeline": {
+    "use_det": false,
+    "use_cls": true,
+    "use_rec": true
+  }
+}
