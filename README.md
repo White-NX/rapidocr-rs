@@ -211,6 +211,7 @@ The current e2e fixtures cover:
 - `empty_black.jpg` with cls enabled and disabled.
 - `short.png` with cls enabled and disabled.
 - `black_font_color_transparent.png` with cls enabled and disabled.
+- `white_font_color_transparent.png` as a detection-only geometry check with documented local corner-drift tolerance.
 - `img_exif_orientation.jpg` with cls enabled and disabled.
 - `ch_doc_server.png` with cls enabled and detection-only.
 - `test_letterbox_like.jpg` with cls enabled and disabled.

@@ -128,6 +128,7 @@ Current strict e2e coverage:
 - `en.jpg` and `latin.jpg` with cls enabled and disabled.
 - `empty_black.jpg` and `short.png` with cls enabled and disabled.
 - `black_font_color_transparent.png` with cls enabled and disabled for transparent-background handling.
+- `white_font_color_transparent.png` as a detection-only geometry check with documented local corner-drift tolerance.
 - `img_exif_orientation.jpg` with cls enabled and disabled for EXIF orientation handling.
 - `ch_doc_server.png` with cls enabled and detection-only for tiny edge text.
 - `test_letterbox_like.jpg` and `test_without_det.jpg` with cls enabled and disabled.
@@ -203,7 +204,7 @@ Tasks:
   - low contrast text
   - Done: representative cross-language DBPostProcess fixtures for Arabic, Devanagari, and Japanese text layout.
   - Done: additional script/layout DBPostProcess fixtures for Tamil, Telugu, and Eslav images.
-  - Partial: transparent images; `black_font_color_transparent.png` is both a DBPostProcess and e2e gate, and `white_font_color_transparent.png` is a DBPostProcess gate with documented local geometry tolerance while its full e2e low-confidence recognition line remains a gap.
+  - Partial: transparent images; `black_font_color_transparent.png` is both a DBPostProcess and e2e gate, and `white_font_color_transparent.png` is a DBPostProcess and detection-only e2e gate with documented local geometry tolerance while its full e2e low-confidence recognition line remains a gap.
 
 Completion criteria:
 

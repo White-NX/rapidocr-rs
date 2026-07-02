@@ -17,6 +17,7 @@ The current e2e parity fixtures cover:
 - `empty_black.jpg`
 - `short.png`
 - `black_font_color_transparent.png`
+- `white_font_color_transparent.png` as a detection-only geometry check with local corner-drift tolerance
 - `img_exif_orientation.jpg`
 - `ch_doc_server.png` with cls enabled and detection-only
 - `test_letterbox_like.jpg`
@@ -43,6 +44,7 @@ Current representative metrics:
 - `empty_black.jpg`: 0/0 lines matched.
 - `short.png`: 0/0 lines matched.
 - `black_font_color_transparent.png`: 3/3 lines matched, exact text match, mean center drift about 1.03 px.
+- `white_font_color_transparent.png` detection-only: 5/5 boxes matched, mean center drift about 1.36 px; it uses a local corner-drift tolerance for documented offset-geometry differences.
 - `white_font_color_transparent.png` DBPostProcess: 5/5 candidates matched, mean center drift about 1.37 px; it uses local corner/size drift tolerances for documented offset-geometry differences.
 - `img_exif_orientation.jpg`: 1/1 line matched, exact text match, mean center drift about 0.45 px.
 - `ch_doc_server.png` with cls enabled: 2/2 lines matched, exact text match, mean corner drift about 0.45 px.
@@ -103,13 +105,13 @@ Current candidate behavior:
 - Python detects short lines such as `中国`, `我`, and `是`.
 - Rust now matches `black_font_color_transparent.png` in the full OCR pipeline and DBPostProcess gate after alpha-channel images are composited onto a high-contrast background.
 - `white_font_color_transparent.png` now matches the main three text lines in the full OCR pipeline, but Python still emits an additional low-confidence `_` line with score about 0.525 that Rust does not emit.
-- `white_font_color_transparent.png` now matches Python's 5 DBPostProcess candidates after the near-threshold DB score tolerance. It is a strict DB gate with local geometry tolerances: mean corner drift is about 10 px and mean size drift about 5.2 px.
+- `white_font_color_transparent.png` now matches Python's 5 detection-only boxes and 5 DBPostProcess candidates after the near-threshold DB score tolerance. It is a strict detection/DB gate with local geometry tolerances: mean corner drift is about 10 px and DB mean size drift about 5.2 px.
 - `white_font_color_transparent.png` still does not pass full e2e parity because Python emits the additional low-confidence `_` line while Rust does not.
 
 Impact:
 
 - The black-font case is a strict e2e and DBPostProcess regression.
-- The white-font case now protects DB candidate count and score behavior, but the full OCR output remains outside strict e2e gates.
+- The white-font case now protects detection candidate count and DB score behavior, but the full OCR output remains outside strict e2e gates.
 
 Next step:
 

@@ -148,6 +148,12 @@ def default_cases() -> list[E2eCase]:
         E2eCase("img_exif_orientation_no_cls", Path("python/tests/test_files/img_exif_orientation.jpg"), full_pipeline(False)),
         E2eCase("black_font_color_transparent_cls", Path("python/tests/test_files/black_font_color_transparent.png"), full_pipeline(True)),
         E2eCase("black_font_color_transparent_no_cls", Path("python/tests/test_files/black_font_color_transparent.png"), full_pipeline(False)),
+        E2eCase(
+            "white_font_color_transparent_det_only",
+            Path("python/tests/test_files/white_font_color_transparent.png"),
+            det_only_pipeline(),
+            {"max_mean_corner_delta": 12.0},
+        ),
         E2eCase("ch_doc_server_cls", Path("python/tests/test_files/ch_doc_server.png"), full_pipeline(True)),
         E2eCase("return_word_debug_cls", Path("python/tests/test_files/return_word_debug.jpg"), full_pipeline(True)),
         E2eCase("text_vertical_words_cls", Path("python/tests/test_files/text_vertical_words.png"), full_pipeline(True)),
