@@ -166,8 +166,10 @@ The current fixtures cover:
 - `ch_doc_server.png`
 - `check_return_word_len.jpeg`
 - `arabic.png`
+- `cyrillic.png`
 - `devanagari.jpg`
 - `japan.jpg`
+- `korean.jpg`
 - `ta.png`
 - `te.png`
 - `eslav.jpg`

@@ -32,7 +32,7 @@ The current e2e parity fixtures cover:
 - `text_cls.jpg` as a recognition-only cls/no-cls 180-degree crop check
 - `text_cls.jpg` as a Rust cls/no-cls golden
 
-The current DBPostProcess parity fixtures additionally cover `black_font_color_transparent.png`, `white_font_color_transparent.png`, `return_word_debug.jpg`, `short.png`, `test_without_det.jpg`, `ch_doc_server.png`, `check_return_word_len.jpeg`, `latin.jpg`, `img_exif_orientation.jpg`, `arabic.png`, `devanagari.jpg`, `japan.jpg`, `ta.png`, `te.png`, and `eslav.jpg`.
+The current DBPostProcess parity fixtures additionally cover `black_font_color_transparent.png`, `white_font_color_transparent.png`, `return_word_debug.jpg`, `short.png`, `test_without_det.jpg`, `ch_doc_server.png`, `check_return_word_len.jpeg`, `latin.jpg`, `img_exif_orientation.jpg`, `arabic.png`, `cyrillic.png`, `devanagari.jpg`, `japan.jpg`, `korean.jpg`, `ta.png`, `te.png`, and `eslav.jpg`.
 
 Current representative metrics:
 
@@ -51,7 +51,7 @@ Current representative metrics:
 - `ch_doc_server.png` detection-only: 2/2 boxes matched, mean center drift about 0.24 px, mean corner drift about 0.45 px.
 - `ch_doc_server.png` DBPostProcess: 2/2 candidates matched with zero geometry drift after output rounding.
 - `check_return_word_len.jpeg` DBPostProcess: 28/28 candidates matched, mean center drift about 0.63 px, mean corner drift about 0.94 px.
-- Cross-language DBPostProcess: `arabic.png` 2/2, `devanagari.jpg` 4/4, and `japan.jpg` 7/7 candidates matched with mean center drift below 0.66 px.
+- Cross-language DBPostProcess: `arabic.png` 2/2, `cyrillic.png` 4/4, `devanagari.jpg` 4/4, `japan.jpg` 7/7, and `korean.jpg` 6/6 candidates matched with mean center drift below 0.66 px.
 - Additional script/layout detection-only: `ta.png` 2/2, `te.png` 1/1, and `eslav.jpg` 1/1 boxes matched with mean center drift at or below 0.50 px.
 - Additional script/layout DBPostProcess: `ta.png` 2/2, `te.png` 1/1, and `eslav.jpg` 1/1 candidates matched with mean corner drift at or below 1.21 px.
 - `te.png` full e2e: cls enabled and disabled both match Python's default-model output `.` exactly.
