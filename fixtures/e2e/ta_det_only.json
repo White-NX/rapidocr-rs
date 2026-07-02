@@ -1,0 +1,56 @@
+{
+  "source": "python-rapidocr",
+  "image": "python/tests/test_files/ta.png",
+  "use_cls": false,
+  "lines": [
+    {
+      "bbox": [
+        [
+          0.0,
+          7.0
+        ],
+        [
+          140.0,
+          6.0
+        ],
+        [
+          140.0,
+          43.0
+        ],
+        [
+          0.0,
+          44.0
+        ]
+      ],
+      "text": "",
+      "score": 0.0
+    },
+    {
+      "bbox": [
+        [
+          121.0,
+          3.0
+        ],
+        [
+          509.0,
+          5.0
+        ],
+        [
+          509.0,
+          46.0
+        ],
+        [
+          120.0,
+          44.0
+        ]
+      ],
+      "text": "",
+      "score": 0.0
+    }
+  ],
+  "pipeline": {
+    "use_det": true,
+    "use_cls": false,
+    "use_rec": false
+  }
+}

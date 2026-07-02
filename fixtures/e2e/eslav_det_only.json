@@ -1,0 +1,34 @@
+{
+  "source": "python-rapidocr",
+  "image": "python/tests/test_files/eslav.jpg",
+  "use_cls": false,
+  "lines": [
+    {
+      "bbox": [
+        [
+          14.0,
+          23.0
+        ],
+        [
+          1103.0,
+          23.0
+        ],
+        [
+          1103.0,
+          76.0
+        ],
+        [
+          14.0,
+          76.0
+        ]
+      ],
+      "text": "",
+      "score": 0.0
+    }
+  ],
+  "pipeline": {
+    "use_det": true,
+    "use_cls": false,
+    "use_rec": false
+  }
+}

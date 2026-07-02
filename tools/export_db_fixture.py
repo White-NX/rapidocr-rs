@@ -67,6 +67,9 @@ def main() -> None:
         Path("python/tests/test_files/arabic.png"),
         Path("python/tests/test_files/devanagari.jpg"),
         Path("python/tests/test_files/japan.jpg"),
+        Path("python/tests/test_files/ta.png"),
+        Path("python/tests/test_files/te.png"),
+        Path("python/tests/test_files/eslav.jpg"),
     ]
 
     engine = RapidOCR(

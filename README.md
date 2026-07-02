@@ -165,6 +165,9 @@ The current fixtures cover:
 - `arabic.png`
 - `devanagari.jpg`
 - `japan.jpg`
+- `ta.png`
+- `te.png`
+- `eslav.jpg`
 
 The test checks candidate count, center-distance drift, score drift, corner drift, and width/height drift against Python's `DBPostProcess` output. Use `-- --nocapture` to print the current metrics.
 
@@ -201,6 +204,8 @@ The current e2e fixtures cover:
 - `text_det.jpg` with cls enabled, cls disabled, and detection-only.
 - `check_return_word_len.jpeg` as a dense-text detection-only geometry check.
 - `arabic.png`, `cyrillic.png`, `devanagari.jpg`, `japan.jpg`, and `korean.jpg` as cross-language detection-only geometry checks.
+- `ta.png`, `te.png`, and `eslav.jpg` as additional script/layout detection-only geometry checks.
+- `te.png` with cls enabled and disabled as a default-model full-pipeline parity check.
 - `en.jpg` with cls enabled and disabled.
 - `empty_black.jpg` with cls enabled and disabled.
 - `short.png` with cls enabled and disabled.

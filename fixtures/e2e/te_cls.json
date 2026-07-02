@@ -1,0 +1,29 @@
+{
+  "source": "python-rapidocr",
+  "image": "python/tests/test_files/te.png",
+  "use_cls": true,
+  "lines": [
+    {
+      "bbox": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          349.0,
+          3.0
+        ],
+        [
+          349.0,
+          38.0
+        ],
+        [
+          0.0,
+          36.0
+        ]
+      ],
+      "text": ".",
+      "score": 0.90855
+    }
+  ]
+}
