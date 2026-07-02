@@ -122,6 +122,22 @@ Next step:
 
 - Investigate whether the low-confidence `_` candidate in the white-font image is desirable enough to preserve before adding it as a strict full e2e fixture.
 
+### Low-Contrast Text Coverage
+
+Current state:
+
+- The current Python `python/tests/test_files` set does not include a dedicated low-contrast text image.
+- `white_font_color_transparent.png` is the closest current strict gate because it exercises near-threshold detector/DB behavior and requires local geometry tolerances.
+
+Impact:
+
+- Phase 4 does not yet have an isolated low-contrast parity fixture.
+- Adding one should wait for a stable source image rather than generating an untracked local-only parity source.
+
+Next step:
+
+- Promote a dedicated low-contrast sample once it exists in the Python parity source, or add an explicit fixture-source policy before introducing repo-local synthetic images.
+
 ### Slanted Text Without Classification
 
 Observed on `return_word_debug.jpg` with `--no-cls`.

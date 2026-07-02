@@ -215,7 +215,7 @@ Tasks:
   - Done: vertical text
   - Done: slanted text
   - Done: Latin and EXIF-oriented DBPostProcess layout fixtures.
-  - low contrast text
+  - Deferred: low contrast text; the current Python `test_files` set has no dedicated low-contrast source image, so the closest strict gate is the near-threshold white transparent text case.
   - Done: representative cross-language DBPostProcess fixtures for Arabic, Cyrillic, Devanagari, Japanese, and Korean text layout.
   - Done: additional script/layout DBPostProcess fixtures for Tamil, Thai crop, Telugu, and Eslav images.
   - Done: recognition-crop DBPostProcess fixtures for English, Greek, and Devanagari crops.
