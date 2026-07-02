@@ -1,0 +1,34 @@
+{
+  "source": "python-rapidocr",
+  "image": "python/tests/test_files/en_rec.jpg",
+  "use_cls": false,
+  "lines": [
+    {
+      "bbox": [
+        [
+          0.0,
+          4.0
+        ],
+        [
+          699.0,
+          4.0
+        ],
+        [
+          699.0,
+          30.0
+        ],
+        [
+          0.0,
+          30.0
+        ]
+      ],
+      "text": "",
+      "score": 0.0
+    }
+  ],
+  "pipeline": {
+    "use_det": true,
+    "use_cls": false,
+    "use_rec": false
+  }
+}

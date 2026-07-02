@@ -161,6 +161,9 @@ The current fixtures cover:
 - `issue_170.png`
 - `short.png`
 - `return_word_debug.jpg`
+- `en_rec.jpg`
+- `el_rec.jpg`
+- `devanagari_rec.png`
 - `black_font_color_transparent.png`
 - `white_font_color_transparent.png`
 - `ch_doc_server.png`
@@ -225,6 +228,7 @@ The current e2e fixtures cover:
 - `text_vertical_words.png` with cls enabled and disabled.
 - `latin.jpg` with cls enabled and disabled.
 - `issue_170.png` with cls enabled and disabled.
+- `en_rec.jpg`, `el_rec.jpg`, and `devanagari_rec.png` as recognition-crop detection-only geometry checks.
 - `en_rec.jpg` recognition-only with cls enabled and disabled.
 - `el_rec.jpg` recognition-only with cls enabled and disabled.
 - `devanagari_rec.png` recognition-only with cls disabled.

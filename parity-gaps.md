@@ -25,6 +25,7 @@ The current e2e parity fixtures cover:
 - `text_vertical_words.png`
 - `latin.jpg`
 - `return_word_debug.jpg` with cls enabled
+- `en_rec.jpg`, `el_rec.jpg`, and `devanagari_rec.png` as recognition-crop detection-only geometry checks
 - `en_rec.jpg` as a recognition-only cls/no-cls long English line check
 - `el_rec.jpg` as a recognition-only cls/no-cls Greek-script default-model check
 - `devanagari_rec.png` as a recognition-only no-cls default-model check
@@ -32,7 +33,7 @@ The current e2e parity fixtures cover:
 - `text_cls.jpg` as a recognition-only cls/no-cls 180-degree crop check
 - `text_cls.jpg` as a Rust cls/no-cls golden
 
-The current DBPostProcess parity fixtures additionally cover `black_font_color_transparent.png`, `white_font_color_transparent.png`, `return_word_debug.jpg`, `short.png`, `test_without_det.jpg`, `ch_doc_server.png`, `check_return_word_len.jpeg`, `latin.jpg`, `img_exif_orientation.jpg`, `arabic.png`, `cyrillic.png`, `devanagari.jpg`, `japan.jpg`, `korean.jpg`, `ta.png`, `th_rec.jpg`, `te.png`, and `eslav.jpg`.
+The current DBPostProcess parity fixtures additionally cover `black_font_color_transparent.png`, `white_font_color_transparent.png`, `return_word_debug.jpg`, `short.png`, `test_without_det.jpg`, `ch_doc_server.png`, `check_return_word_len.jpeg`, `latin.jpg`, `img_exif_orientation.jpg`, `en_rec.jpg`, `el_rec.jpg`, `devanagari_rec.png`, `arabic.png`, `cyrillic.png`, `devanagari.jpg`, `japan.jpg`, `korean.jpg`, `ta.png`, `th_rec.jpg`, `te.png`, and `eslav.jpg`.
 
 Current representative metrics:
 
@@ -54,6 +55,8 @@ Current representative metrics:
 - Cross-language DBPostProcess: `arabic.png` 2/2, `cyrillic.png` 4/4, `devanagari.jpg` 4/4, `japan.jpg` 7/7, and `korean.jpg` 6/6 candidates matched with mean center drift below 0.66 px.
 - Additional script/layout detection-only: `ta.png` 2/2, `th_rec.jpg` 1/1, `te.png` 1/1, and `eslav.jpg` 1/1 boxes matched with mean center drift at or below 0.50 px.
 - Additional script/layout DBPostProcess: `ta.png` 2/2, `th_rec.jpg` 1/1, `te.png` 1/1, and `eslav.jpg` 1/1 candidates matched with mean corner drift at or below 1.21 px.
+- Recognition-crop detection-only: `en_rec.jpg` 1/1, `el_rec.jpg` 3/3, and `devanagari_rec.png` 2/2 boxes matched with mean corner drift at or below 0.75 px.
+- Recognition-crop DBPostProcess: `en_rec.jpg` 1/1, `el_rec.jpg` 3/3, and `devanagari_rec.png` 2/2 candidates matched with mean corner drift at or below 0.50 px.
 - `te.png` full e2e: cls enabled and disabled both match Python's default-model output `.` exactly.
 - `test_letterbox_like.jpg`: 2/2 lines matched, character accuracy about 0.994.
 - `test_without_det.jpg`: 1/1 line matched, exact text match, mean center drift about 0.09 px.
@@ -197,6 +200,25 @@ Impact:
 Next step:
 
 - Revisit after model-matrix work adds language-specific recognition dictionaries and models, or after cls crop handling differences are narrowed further.
+
+### Recognition Crop Detection Candidates
+
+Observed on `text_rec.jpg` and `text_cls.jpg` when evaluated as detection-only and DBPostProcess candidates.
+
+Current candidate behavior:
+
+- Python emits no detection candidate for these cropped recognition images.
+- Rust currently emits one detection candidate for each image.
+- The existing recognition-only gates remain strict and useful; the detector/DB candidate count mismatch is specific to running the detector on these already-cropped inputs.
+
+Impact:
+
+- `text_rec.jpg` and `text_cls.jpg` should stay out of strict detection-only and DBPostProcess gates until the intended behavior is clearer.
+- The rec-only fixtures continue to cover normal and rotated crop recognition behavior.
+
+Next step:
+
+- Revisit if recognition-crop detector behavior becomes part of the supported surface, or while tightening near-threshold DB candidate filtering.
 
 ## Resolved Differences
 

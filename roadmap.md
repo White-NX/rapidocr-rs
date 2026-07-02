@@ -135,6 +135,7 @@ Current strict e2e coverage:
 - `return_word_debug.jpg` with cls enabled for slanted text and digit-string recognition.
 - `text_vertical_words.png` with cls enabled and disabled.
 - `issue_170.png` with cls enabled and disabled; this fixture uses a documented local corner-drift tolerance.
+- `en_rec.jpg`, `el_rec.jpg`, and `devanagari_rec.png` as recognition-crop detection-only geometry checks.
 - `en_rec.jpg` as a recognition-only long English line cls/no-cls check.
 - `el_rec.jpg` as a recognition-only Greek line cls/no-cls check.
 - `devanagari_rec.png` as a recognition-only no-cls check.
@@ -156,6 +157,9 @@ Current DBPostProcess coverage:
 - `issue_170.png`
 - `short.png`
 - `return_word_debug.jpg`
+- `en_rec.jpg`
+- `el_rec.jpg`
+- `devanagari_rec.png`
 - `black_font_color_transparent.png`
 - `white_font_color_transparent.png`
 - `ch_doc_server.png`
@@ -201,6 +205,9 @@ Tasks:
   - `th_rec.jpg`
   - `te.png`
   - `eslav.jpg`
+  - `en_rec.jpg`
+  - `el_rec.jpg`
+  - `devanagari_rec.png`
   - count and geometry are gated without recognition text/score checks
 - In progress: add regression fixtures for DBPostProcess edge cases:
   - Done: empty images
@@ -211,6 +218,7 @@ Tasks:
   - low contrast text
   - Done: representative cross-language DBPostProcess fixtures for Arabic, Cyrillic, Devanagari, Japanese, and Korean text layout.
   - Done: additional script/layout DBPostProcess fixtures for Tamil, Thai crop, Telugu, and Eslav images.
+  - Done: recognition-crop DBPostProcess fixtures for English, Greek, and Devanagari crops.
   - Partial: transparent images; `black_font_color_transparent.png` is both a DBPostProcess and e2e gate, and `white_font_color_transparent.png` is a DBPostProcess and detection-only e2e gate with documented local geometry tolerance while its full e2e low-confidence recognition line remains a gap.
 
 Completion criteria:

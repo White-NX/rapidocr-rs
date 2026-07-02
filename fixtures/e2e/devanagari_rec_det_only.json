@@ -1,0 +1,56 @@
+{
+  "source": "python-rapidocr",
+  "image": "python/tests/test_files/devanagari_rec.png",
+  "use_cls": false,
+  "lines": [
+    {
+      "bbox": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          127.0,
+          0.0
+        ],
+        [
+          127.0,
+          38.0
+        ],
+        [
+          0.0,
+          38.0
+        ]
+      ],
+      "text": "",
+      "score": 0.0
+    },
+    {
+      "bbox": [
+        [
+          102.0,
+          0.0
+        ],
+        [
+          198.0,
+          0.0
+        ],
+        [
+          198.0,
+          38.0
+        ],
+        [
+          101.0,
+          38.0
+        ]
+      ],
+      "text": "",
+      "score": 0.0
+    }
+  ],
+  "pipeline": {
+    "use_det": true,
+    "use_cls": false,
+    "use_rec": false
+  }
+}
