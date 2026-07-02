@@ -150,6 +150,8 @@ Current DBPostProcess coverage:
 - `test_letterbox_like.jpg`
 - `test_without_det.jpg`
 - `text_vertical_words.png`
+- `latin.jpg`
+- `img_exif_orientation.jpg`
 - `empty_black.jpg`
 - `issue_170.png`
 - `short.png`
@@ -201,6 +203,7 @@ Tasks:
   - Partial: dense small text; `ch_doc_server.png` is an e2e cls, detection-only, and DBPostProcess gate, `check_return_word_len.jpeg` is a detection-only and DBPostProcess gate, while no-cls text and `check_return_word_len.jpeg` text accuracy remain documented gaps.
   - Done: vertical text
   - Done: slanted text
+  - Done: Latin and EXIF-oriented DBPostProcess layout fixtures.
   - low contrast text
   - Done: representative cross-language DBPostProcess fixtures for Arabic, Devanagari, and Japanese text layout.
   - Done: additional script/layout DBPostProcess fixtures for Tamil, Telugu, and Eslav images.

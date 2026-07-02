@@ -155,6 +155,8 @@ The current fixtures cover:
 - `test_letterbox_like.jpg`
 - `test_without_det.jpg`
 - `text_vertical_words.png`
+- `latin.jpg`
+- `img_exif_orientation.jpg`
 - `empty_black.jpg`
 - `issue_170.png`
 - `short.png`

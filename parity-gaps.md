@@ -32,7 +32,7 @@ The current e2e parity fixtures cover:
 - `text_cls.jpg` as a recognition-only cls/no-cls 180-degree crop check
 - `text_cls.jpg` as a Rust cls/no-cls golden
 
-The current DBPostProcess parity fixtures additionally cover `black_font_color_transparent.png`, `white_font_color_transparent.png`, `return_word_debug.jpg`, `short.png`, `test_without_det.jpg`, `ch_doc_server.png`, `check_return_word_len.jpeg`, `arabic.png`, `devanagari.jpg`, `japan.jpg`, `ta.png`, `te.png`, and `eslav.jpg`.
+The current DBPostProcess parity fixtures additionally cover `black_font_color_transparent.png`, `white_font_color_transparent.png`, `return_word_debug.jpg`, `short.png`, `test_without_det.jpg`, `ch_doc_server.png`, `check_return_word_len.jpeg`, `latin.jpg`, `img_exif_orientation.jpg`, `arabic.png`, `devanagari.jpg`, `japan.jpg`, `ta.png`, `te.png`, and `eslav.jpg`.
 
 Current representative metrics:
 
@@ -59,6 +59,8 @@ Current representative metrics:
 - `test_without_det.jpg`: 1/1 line matched, exact text match, mean center drift about 0.09 px.
 - `text_vertical_words.png`: 3/3 lines matched, exact text match.
 - `latin.jpg`: 1/1 line matched, exact text match.
+- `latin.jpg` DBPostProcess: 1/1 candidate matched, mean corner drift about 1.21 px.
+- `img_exif_orientation.jpg` DBPostProcess: 1/1 candidate matched, mean corner drift about 0.96 px.
 - `return_word_debug.jpg` with cls enabled: 5/5 lines matched, exact text match, mean center drift about 0.68 px.
 - `issue_170.png`: 1/1 line matched, exact text match; the fixture uses a local corner-drift tolerance of 8 px because the current Rust polygon corners differ slightly more than the global 6 px gate while the center and text remain stable.
 - `en_rec.jpg` recognition-only: cls enabled and disabled both match the long English line exactly.
