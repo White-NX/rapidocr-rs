@@ -171,6 +171,7 @@ The current fixtures cover:
 - `japan.jpg`
 - `korean.jpg`
 - `ta.png`
+- `th_rec.jpg`
 - `te.png`
 - `eslav.jpg`
 
@@ -209,7 +210,7 @@ The current e2e fixtures cover:
 - `text_det.jpg` with cls enabled, cls disabled, and detection-only.
 - `check_return_word_len.jpeg` as a dense-text detection-only geometry check.
 - `arabic.png`, `cyrillic.png`, `devanagari.jpg`, `japan.jpg`, and `korean.jpg` as cross-language detection-only geometry checks.
-- `ta.png`, `te.png`, and `eslav.jpg` as additional script/layout detection-only geometry checks.
+- `ta.png`, `th_rec.jpg`, `te.png`, and `eslav.jpg` as additional script/layout detection-only geometry checks.
 - `te.png` with cls enabled and disabled as a default-model full-pipeline parity check.
 - `en.jpg` with cls enabled and disabled.
 - `empty_black.jpg` with cls enabled and disabled.

@@ -123,7 +123,7 @@ Current strict e2e coverage:
 - `ch_en_num.jpg` and `text_det.jpg` with cls enabled, cls disabled, and detection-only.
 - `check_return_word_len.jpeg` as a dense-text detection-only geometry check.
 - `arabic.png`, `cyrillic.png`, `devanagari.jpg`, `japan.jpg`, and `korean.jpg` as cross-language detection-only geometry checks.
-- `ta.png`, `te.png`, and `eslav.jpg` as additional script/layout detection-only geometry checks.
+- `ta.png`, `th_rec.jpg`, `te.png`, and `eslav.jpg` as additional script/layout detection-only geometry checks.
 - `te.png` with cls enabled and disabled as a default-model full-pipeline parity check.
 - `en.jpg` and `latin.jpg` with cls enabled and disabled.
 - `empty_black.jpg` and `short.png` with cls enabled and disabled.
@@ -166,6 +166,7 @@ Current DBPostProcess coverage:
 - `japan.jpg`
 - `korean.jpg`
 - `ta.png`
+- `th_rec.jpg`
 - `te.png`
 - `eslav.jpg`
 
@@ -197,6 +198,7 @@ Tasks:
   - `japan.jpg`
   - `korean.jpg`
   - `ta.png`
+  - `th_rec.jpg`
   - `te.png`
   - `eslav.jpg`
   - count and geometry are gated without recognition text/score checks
@@ -208,7 +210,7 @@ Tasks:
   - Done: Latin and EXIF-oriented DBPostProcess layout fixtures.
   - low contrast text
   - Done: representative cross-language DBPostProcess fixtures for Arabic, Cyrillic, Devanagari, Japanese, and Korean text layout.
-  - Done: additional script/layout DBPostProcess fixtures for Tamil, Telugu, and Eslav images.
+  - Done: additional script/layout DBPostProcess fixtures for Tamil, Thai crop, Telugu, and Eslav images.
   - Partial: transparent images; `black_font_color_transparent.png` is both a DBPostProcess and e2e gate, and `white_font_color_transparent.png` is a DBPostProcess and detection-only e2e gate with documented local geometry tolerance while its full e2e low-confidence recognition line remains a gap.
 
 Completion criteria:

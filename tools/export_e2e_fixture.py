@@ -129,6 +129,7 @@ def default_cases() -> list[E2eCase]:
         E2eCase("japan_det_only", Path("python/tests/test_files/japan.jpg"), det_only_pipeline()),
         E2eCase("korean_det_only", Path("python/tests/test_files/korean.jpg"), det_only_pipeline()),
         E2eCase("ta_det_only", Path("python/tests/test_files/ta.png"), det_only_pipeline()),
+        E2eCase("th_rec_det_only", Path("python/tests/test_files/th_rec.jpg"), det_only_pipeline()),
         E2eCase("te_cls", Path("python/tests/test_files/te.png"), full_pipeline(True)),
         E2eCase("te_no_cls", Path("python/tests/test_files/te.png"), full_pipeline(False)),
         E2eCase("te_det_only", Path("python/tests/test_files/te.png"), det_only_pipeline()),

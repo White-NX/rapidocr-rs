@@ -80,6 +80,7 @@ def main() -> None:
         Path("python/tests/test_files/japan.jpg"),
         Path("python/tests/test_files/korean.jpg"),
         Path("python/tests/test_files/ta.png"),
+        Path("python/tests/test_files/th_rec.jpg"),
         Path("python/tests/test_files/te.png"),
         Path("python/tests/test_files/eslav.jpg"),
     ]

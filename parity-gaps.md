@@ -11,7 +11,7 @@ The current e2e parity fixtures cover:
 - `ch_en_num.jpg` and `text_det.jpg` as detection-only geometry checks
 - `check_return_word_len.jpeg` as a dense-text detection-only geometry check
 - `arabic.png`, `cyrillic.png`, `devanagari.jpg`, `japan.jpg`, and `korean.jpg` as cross-language detection-only geometry checks
-- `ta.png`, `te.png`, and `eslav.jpg` as additional script/layout detection-only geometry checks
+- `ta.png`, `th_rec.jpg`, `te.png`, and `eslav.jpg` as additional script/layout detection-only geometry checks
 - `te.png` with cls enabled and disabled as a default-model full-pipeline parity check
 - `en.jpg`
 - `empty_black.jpg`
@@ -32,7 +32,7 @@ The current e2e parity fixtures cover:
 - `text_cls.jpg` as a recognition-only cls/no-cls 180-degree crop check
 - `text_cls.jpg` as a Rust cls/no-cls golden
 
-The current DBPostProcess parity fixtures additionally cover `black_font_color_transparent.png`, `white_font_color_transparent.png`, `return_word_debug.jpg`, `short.png`, `test_without_det.jpg`, `ch_doc_server.png`, `check_return_word_len.jpeg`, `latin.jpg`, `img_exif_orientation.jpg`, `arabic.png`, `cyrillic.png`, `devanagari.jpg`, `japan.jpg`, `korean.jpg`, `ta.png`, `te.png`, and `eslav.jpg`.
+The current DBPostProcess parity fixtures additionally cover `black_font_color_transparent.png`, `white_font_color_transparent.png`, `return_word_debug.jpg`, `short.png`, `test_without_det.jpg`, `ch_doc_server.png`, `check_return_word_len.jpeg`, `latin.jpg`, `img_exif_orientation.jpg`, `arabic.png`, `cyrillic.png`, `devanagari.jpg`, `japan.jpg`, `korean.jpg`, `ta.png`, `th_rec.jpg`, `te.png`, and `eslav.jpg`.
 
 Current representative metrics:
 
@@ -52,8 +52,8 @@ Current representative metrics:
 - `ch_doc_server.png` DBPostProcess: 2/2 candidates matched with zero geometry drift after output rounding.
 - `check_return_word_len.jpeg` DBPostProcess: 28/28 candidates matched, mean center drift about 0.63 px, mean corner drift about 0.94 px.
 - Cross-language DBPostProcess: `arabic.png` 2/2, `cyrillic.png` 4/4, `devanagari.jpg` 4/4, `japan.jpg` 7/7, and `korean.jpg` 6/6 candidates matched with mean center drift below 0.66 px.
-- Additional script/layout detection-only: `ta.png` 2/2, `te.png` 1/1, and `eslav.jpg` 1/1 boxes matched with mean center drift at or below 0.50 px.
-- Additional script/layout DBPostProcess: `ta.png` 2/2, `te.png` 1/1, and `eslav.jpg` 1/1 candidates matched with mean corner drift at or below 1.21 px.
+- Additional script/layout detection-only: `ta.png` 2/2, `th_rec.jpg` 1/1, `te.png` 1/1, and `eslav.jpg` 1/1 boxes matched with mean center drift at or below 0.50 px.
+- Additional script/layout DBPostProcess: `ta.png` 2/2, `th_rec.jpg` 1/1, `te.png` 1/1, and `eslav.jpg` 1/1 candidates matched with mean corner drift at or below 1.21 px.
 - `te.png` full e2e: cls enabled and disabled both match Python's default-model output `.` exactly.
 - `test_letterbox_like.jpg`: 2/2 lines matched, character accuracy about 0.994.
 - `test_without_det.jpg`: 1/1 line matched, exact text match, mean center drift about 0.09 px.
@@ -184,7 +184,7 @@ Current candidate behavior:
 
 - `devanagari_rec.png` no-cls is now a strict recognition-only gate because Rust and Python both output `H`.
 - `devanagari_rec.png` with cls enabled is not strict: Python emits `和5`, while Rust currently emits no line after the cls path.
-- `th_rec.jpg` recognition-only is not strict: Python emits `nsuwnuuzinunavnlunnaunuiula`, while Rust emits `nunuuziunavnunnaunuiul`; character accuracy is about 0.815.
+- `th_rec.jpg` detection-only and DBPostProcess geometry are now strict 1/1 gates, but recognition-only is not strict: Python emits `nsuwnuuzinunavnlunnaunuiula`, while Rust emits `nunuuziunavnunnaunuiul`; character accuracy is about 0.815.
 - `te.png` is now a strict full-pipeline gate because Rust and Python both output `.` with score drift under the current gate.
 - `ta.png` full-pipeline candidate is not strict: detection geometry is stable, but text parity is poor with character accuracy about 0.40.
 - `eslav.jpg` full-pipeline candidate is not strict yet: text and geometry match, but recognition score drift is about 0.112, above the current 0.08 gate.
