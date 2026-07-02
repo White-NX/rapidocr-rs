@@ -313,11 +313,12 @@ Completion criteria:
 
 ## Recommended Next Step
 
-The next best step is parity/performance work from the standalone repository:
+The next best step is to pause broad fixture expansion and focus on the remaining documented parity gaps:
 
-1. Test additional candidate fixtures before adding them to strict gates, especially noisy, small-text, transparent, EXIF-orientation, and additional language cases.
-2. Extend focused cls behavior tests beyond recognition-only crops if detector-produced crops reveal additional rotation edge cases.
-3. Extend the benchmark baseline beyond hot-loop e2e latency into model load, stage-level latency, postprocess cost, and memory usage.
+1. Investigate `ch_doc_server.png` with cls disabled, where tiny edge text still drifts from Python.
+2. Decide whether `white_font_color_transparent.png` should preserve Python's low-confidence `_` full-pipeline candidate or remain a documented difference.
+3. Revisit language/default-model recognition gaps for `devanagari_rec.png` with cls enabled, `th_rec.jpg` recognition-only, and `ta.png` full pipeline.
 4. Keep `parity-gaps.md` updated with rejected or deferred candidate fixtures and their observed metrics.
+5. Resume Phase 5 benchmarking after Phase 4 work pauses, especially model load, stage-level latency, postprocess cost, and memory usage.
 
 This keeps the project moving from a stable default API and repository layout toward broader parity and measured performance work without prematurely expanding the backend/model matrix.
