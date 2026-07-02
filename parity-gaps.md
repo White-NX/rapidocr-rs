@@ -13,6 +13,7 @@ The current e2e parity fixtures cover:
 - `short.png`
 - `black_font_color_transparent.png`
 - `img_exif_orientation.jpg`
+- `ch_doc_server.png` with cls enabled
 - `test_letterbox_like.jpg`
 - `test_without_det.jpg`
 - `text_vertical_words.png`
@@ -32,6 +33,7 @@ Current representative metrics:
 - `short.png`: 0/0 lines matched.
 - `black_font_color_transparent.png`: 3/3 lines matched, exact text match, mean center drift about 1.03 px.
 - `img_exif_orientation.jpg`: 1/1 line matched, exact text match, mean center drift about 0.45 px.
+- `ch_doc_server.png` with cls enabled: 2/2 lines matched, exact text match, mean corner drift about 0.45 px.
 - `test_letterbox_like.jpg`: 2/2 lines matched, character accuracy about 0.994.
 - `test_without_det.jpg`: 1/1 line matched, exact text match, mean center drift about 0.09 px.
 - `text_vertical_words.png`: 3/3 lines matched, exact text match.
@@ -109,23 +111,24 @@ Next step:
 
 - Revisit after crop orientation parity is tightened for slanted detector boxes.
 
-### Tiny Border Text
+### Tiny Border Text Without Classification And DBPostProcess
 
 Observed on `ch_doc_server.png`.
 
 Current candidate behavior:
 
-- Python e2e output has 2 lines: `嫖娼` and a tiny top-border `DCIIT`.
-- Rust full-pipeline output currently keeps only `嫖娼`.
-- DBPostProcess candidate testing showed Rust emits 3 candidates while Python emits 2.
+- Rust now matches Python's cls-enabled e2e output after edge-near perspective crops replicate border pixels like OpenCV.
+- With cls disabled, Python recognizes the tiny top-border crop as `1113C`; Rust recognizes it as `1115C`.
+- DBPostProcess candidate testing with the Python detector `pred.npy` still shows Rust emits 3 candidates while Python emits 2.
 
 Impact:
 
-- The image is useful for dense or tiny text candidate work, but it is not a strict gate yet.
+- The image is a strict cls-enabled e2e gate for tiny edge text.
+- It is not a strict no-cls e2e or DBPostProcess gate yet.
 
 Next step:
 
-- Investigate small candidate filtering and text-score filtering before adding this image.
+- Investigate no-cls crop recognition drift and small candidate filtering before adding stricter variants.
 
 ## Resolved Differences
 
@@ -134,6 +137,12 @@ Next step:
 Observed on `img_exif_orientation.jpg`.
 
 Python normalizes EXIF orientation through `ImageOps.exif_transpose`. Rust now reads decoder orientation metadata and applies it before OCR. The image is a strict e2e fixture with cls enabled and disabled.
+
+### Tiny Edge Text With Classification
+
+Observed on `ch_doc_server.png`.
+
+Python uses OpenCV `BORDER_REPLICATE` for perspective crops. Rust now pads edge-near crops with replicated border pixels before warping, which makes the tiny top-border text recognizable with cls enabled.
 
 ### Letterbox-Like Long Lines
 

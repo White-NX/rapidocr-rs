@@ -118,6 +118,7 @@ use_rec = true
 
 Missing images, model files, dictionaries, invalid config values, and ONNX loading failures include the relevant path and stage in the error message.
 Image loading applies file EXIF orientation and composites alpha-channel images onto a high-contrast background before OCR, matching the Python input path for the covered parity fixtures.
+Perspective crops near image edges use replicated border pixels before warping, matching Python's OpenCV crop behavior for tiny edge text.
 
 The detector postprocess is still an approximation of Python's `DBPostProcess`. It uses thresholding, dilation, connected components, boundary extraction, convex hull, a rotating-calipers style minimum-area rectangle, Python-style point ordering, polygon mean score filtering, pure Rust polygon area/perimeter metrics, convex polygon offset for unclip expansion, stricter size filtering, and perspective crop. This is enough to validate ONNX Runtime inference, recognition decoding, and the end-to-end CLI, but it is not yet full OpenCV/pyclipper parity.
 
@@ -188,6 +189,7 @@ The current e2e fixtures cover:
 - `short.png` with cls enabled and disabled.
 - `black_font_color_transparent.png` with cls enabled and disabled.
 - `img_exif_orientation.jpg` with cls enabled and disabled.
+- `ch_doc_server.png` with cls enabled.
 - `test_letterbox_like.jpg` with cls enabled and disabled.
 - `test_without_det.jpg` with cls enabled and disabled.
 - `return_word_debug.jpg` with cls enabled.

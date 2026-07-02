@@ -125,6 +125,7 @@ Current strict e2e coverage:
 - `empty_black.jpg` and `short.png` with cls enabled and disabled.
 - `black_font_color_transparent.png` with cls enabled and disabled for transparent-background handling.
 - `img_exif_orientation.jpg` with cls enabled and disabled for EXIF orientation handling.
+- `ch_doc_server.png` with cls enabled for tiny edge text.
 - `test_letterbox_like.jpg` and `test_without_det.jpg` with cls enabled and disabled.
 - `return_word_debug.jpg` with cls enabled for slanted text and digit-string recognition.
 - `text_vertical_words.png` with cls enabled and disabled.
@@ -164,7 +165,7 @@ Tasks:
   - `--no-cls` should preserve unrotated crops
 - In progress: add regression fixtures for DBPostProcess edge cases:
   - Done: empty images
-  - dense small text
+  - Partial: dense small text; `ch_doc_server.png` is an e2e cls gate, while no-cls text and DBPostProcess candidate-count parity remain documented gaps.
   - Done: vertical text
   - Done: slanted text
   - low contrast text

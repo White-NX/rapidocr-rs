@@ -189,7 +189,21 @@ pub fn crop_axis_aligned(img: &RgbImage, bbox: &Quad) -> Result<RgbImage> {
 }
 
 pub fn crop_perspective(img: &RgbImage, bbox: &Quad) -> Result<RgbImage> {
-    let bbox = bbox.clone().ordered();
+    let mut bbox = bbox.clone().ordered();
+    const REPLICATE_PAD: u32 = 2;
+    if is_near_image_edge(&bbox, img.width(), img.height(), REPLICATE_PAD) {
+        let padded = replicate_border(img, REPLICATE_PAD);
+        for point in &mut bbox.points {
+            point[0] += REPLICATE_PAD as f32;
+            point[1] += REPLICATE_PAD as f32;
+        }
+        return crop_perspective_ordered(&padded, &bbox);
+    }
+
+    crop_perspective_ordered(img, &bbox)
+}
+
+fn crop_perspective_ordered(img: &RgbImage, bbox: &Quad) -> Result<RgbImage> {
     let crop_w = bbox.crop_width();
     let crop_h = bbox.crop_height();
     if crop_w == 0 || crop_h == 0 {
@@ -229,6 +243,28 @@ pub fn crop_perspective(img: &RgbImage, bbox: &Quad) -> Result<RgbImage> {
     }
 }
 
+fn is_near_image_edge(bbox: &Quad, width: u32, height: u32, pad: u32) -> bool {
+    let max_x = width.saturating_sub(1) as f32;
+    let max_y = height.saturating_sub(1) as f32;
+    let pad = pad as f32;
+    bbox.points.iter().any(|point| {
+        point[0] < pad || point[1] < pad || point[0] > max_x - pad || point[1] > max_y - pad
+    })
+}
+
+fn replicate_border(img: &RgbImage, pad: u32) -> RgbImage {
+    let (width, height) = img.dimensions();
+    let mut out = RgbImage::new(width + pad * 2, height + pad * 2);
+    for y in 0..out.height() {
+        for x in 0..out.width() {
+            let src_x = x.saturating_sub(pad).min(width.saturating_sub(1));
+            let src_y = y.saturating_sub(pad).min(height.saturating_sub(1));
+            out.put_pixel(x, y, *img.get_pixel(src_x, src_y));
+        }
+    }
+    out
+}
+
 pub fn round_to_multiple(value: u32, divisor: u32) -> u32 {
     ((value + divisor / 2) / divisor) * divisor
 }
@@ -256,5 +292,22 @@ mod tests {
 
         assert_eq!(white_out.get_pixel(0, 0).0, [255, 255, 255]);
         assert_eq!(white_out.get_pixel(1, 0).0, [0, 0, 0]);
+    }
+
+    #[test]
+    fn replicate_border_extends_edge_pixels() {
+        let mut img = RgbImage::new(2, 2);
+        img.put_pixel(0, 0, Rgb([1, 2, 3]));
+        img.put_pixel(1, 0, Rgb([4, 5, 6]));
+        img.put_pixel(0, 1, Rgb([7, 8, 9]));
+        img.put_pixel(1, 1, Rgb([10, 11, 12]));
+
+        let padded = replicate_border(&img, 1);
+
+        assert_eq!(padded.get_pixel(0, 0).0, [1, 2, 3]);
+        assert_eq!(padded.get_pixel(3, 0).0, [4, 5, 6]);
+        assert_eq!(padded.get_pixel(0, 3).0, [7, 8, 9]);
+        assert_eq!(padded.get_pixel(3, 3).0, [10, 11, 12]);
+        assert_eq!(padded.get_pixel(2, 2).0, [10, 11, 12]);
     }
 }
