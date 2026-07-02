@@ -120,7 +120,7 @@ Status: in progress.
 
 Current strict e2e coverage:
 
-- `ch_en_num.jpg` and `text_det.jpg` with cls enabled and disabled.
+- `ch_en_num.jpg` and `text_det.jpg` with cls enabled, cls disabled, and detection-only.
 - `en.jpg` and `latin.jpg` with cls enabled and disabled.
 - `empty_black.jpg` and `short.png` with cls enabled and disabled.
 - `black_font_color_transparent.png` with cls enabled and disabled for transparent-background handling.
@@ -164,6 +164,10 @@ Tasks:
   - normal text should not be rotated
   - 180-degree text should be rotated
   - `--no-cls` should preserve unrotated crops
+- Done for detection-only e2e fixtures:
+  - `ch_en_num.jpg`
+  - `text_det.jpg`
+  - count and geometry are gated without recognition text/score checks
 - In progress: add regression fixtures for DBPostProcess edge cases:
   - Done: empty images
   - Partial: dense small text; `ch_doc_server.png` is an e2e cls gate, while no-cls text, `check_return_word_len.jpeg` text accuracy, and DBPostProcess candidate-count parity remain documented gaps.

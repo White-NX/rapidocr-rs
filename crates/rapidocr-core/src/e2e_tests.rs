@@ -114,26 +114,28 @@ fn e2e_output_tracks_golden_metrics() {
         );
 
         if metrics.expected_count > 0 {
-            assert!(
-                metrics.exact_text_ratio >= fixture.tolerances.min_exact_text_ratio
-                    || metrics.char_accuracy >= 0.99,
-                "text parity too low for {}: exact_text_ratio={}, char_accuracy={}",
-                fixture_path.display(),
-                metrics.exact_text_ratio,
-                metrics.char_accuracy
-            );
-            assert!(
-                metrics.char_accuracy >= fixture.tolerances.min_char_accuracy,
-                "char accuracy too low for {}: {}",
-                fixture_path.display(),
-                metrics.char_accuracy
-            );
-            assert!(
-                metrics.mean_score_delta < fixture.tolerances.max_mean_score_delta,
-                "mean score delta too high for {}: {}",
-                fixture_path.display(),
-                metrics.mean_score_delta
-            );
+            if pipeline.use_rec {
+                assert!(
+                    metrics.exact_text_ratio >= fixture.tolerances.min_exact_text_ratio
+                        || metrics.char_accuracy >= 0.99,
+                    "text parity too low for {}: exact_text_ratio={}, char_accuracy={}",
+                    fixture_path.display(),
+                    metrics.exact_text_ratio,
+                    metrics.char_accuracy
+                );
+                assert!(
+                    metrics.char_accuracy >= fixture.tolerances.min_char_accuracy,
+                    "char accuracy too low for {}: {}",
+                    fixture_path.display(),
+                    metrics.char_accuracy
+                );
+                assert!(
+                    metrics.mean_score_delta < fixture.tolerances.max_mean_score_delta,
+                    "mean score delta too high for {}: {}",
+                    fixture_path.display(),
+                    metrics.mean_score_delta
+                );
+            }
             assert!(
                 metrics.mean_center_delta < fixture.tolerances.max_mean_center_delta,
                 "mean center delta too high for {}: {}",

@@ -188,10 +188,12 @@ $env:RAPIDOCR_E2E_FIXTURE_ROOT = "D:\projects\rapidocr-rs\target\e2e_candidates"
 cargo test -p rapidocr-core e2e_output_tracks_golden_metrics -- --nocapture
 ```
 
+Use `--pipeline det-only` to evaluate detection-only geometry candidates.
+
 The current e2e fixtures cover:
 
-- `ch_en_num.jpg` with cls enabled and disabled.
-- `text_det.jpg` with cls enabled and disabled.
+- `ch_en_num.jpg` with cls enabled, cls disabled, and detection-only.
+- `text_det.jpg` with cls enabled, cls disabled, and detection-only.
 - `en.jpg` with cls enabled and disabled.
 - `empty_black.jpg` with cls enabled and disabled.
 - `short.png` with cls enabled and disabled.
@@ -209,9 +211,9 @@ The current e2e fixtures cover:
 - `text_cls.jpg` recognition-only with cls enabled and disabled.
 - `text_cls.jpg` as a Rust golden for the cls/no-cls pipeline switch.
 
-The test checks line count, nearest-center matching, exact text ratio, character accuracy, score drift, center drift, and corner drift. It requires downloaded models in `models` and Python test images from `RAPIDOCR_PYTHON_REPO`.
+The test checks line count, nearest-center matching, exact text ratio, character accuracy, score drift, center drift, and corner drift. Detection-only fixtures skip recognition text/score gates and keep the count and geometry gates. It requires downloaded models in `models` and Python test images from `RAPIDOCR_PYTHON_REPO`.
 Fixtures use the default metric gates unless the JSON contains a `tolerances` object for a known, documented geometry difference.
-Fixtures may also contain a `pipeline` object with `use_det`, `use_cls`, and `use_rec` for non-default pipeline coverage such as recognition-only cls behavior.
+Fixtures may also contain a `pipeline` object with `use_det`, `use_cls`, and `use_rec` for non-default pipeline coverage such as recognition-only cls behavior and detection-only geometry checks.
 
 Instead of setting the environment variable every time, create a local ignored `config/local.toml`:
 

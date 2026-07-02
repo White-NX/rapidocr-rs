@@ -8,6 +8,7 @@ The current e2e parity fixtures cover:
 
 - `ch_en_num.jpg`
 - `text_det.jpg`
+- `ch_en_num.jpg` and `text_det.jpg` as detection-only geometry checks
 - `en.jpg`
 - `empty_black.jpg`
 - `short.png`
@@ -29,6 +30,7 @@ The current DBPostProcess parity fixtures additionally cover `black_font_color_t
 Current representative metrics:
 
 - `ch_en_num.jpg` and `text_det.jpg`: 18/18 lines matched, character accuracy about 0.976, mean center drift about 1.23 px.
+- `ch_en_num.jpg` and `text_det.jpg` detection-only: 18/18 boxes matched, mean center drift about 1.23 px, mean corner drift about 1.45 px.
 - `en.jpg`: 5/5 lines matched, exact text match, mean center drift about 0.21 px.
 - `empty_black.jpg`: 0/0 lines matched.
 - `short.png`: 0/0 lines matched.

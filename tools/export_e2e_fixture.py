@@ -33,11 +33,11 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         action="append",
         default=None,
-        help="Image path relative to the Python RapidOCR repo, or an absolute path. Custom images export cls and no-cls fixtures.",
+        help="Image path relative to the Python RapidOCR repo, or an absolute path. Custom full/rec-only images export cls and no-cls fixtures; det-only exports one fixture.",
     )
     parser.add_argument(
         "--pipeline",
-        choices=["full", "rec-only"],
+        choices=["full", "rec-only", "det-only"],
         default="full",
         help="Pipeline used with custom --image exports.",
     )
@@ -93,13 +93,21 @@ def rec_only_pipeline(use_cls: bool) -> dict[str, bool]:
     return {"use_det": False, "use_cls": use_cls, "use_rec": True}
 
 
+def det_only_pipeline() -> dict[str, bool]:
+    return {"use_det": True, "use_cls": False, "use_rec": False}
+
+
 def custom_cases(images: list[Path], python_repo: Path, pipeline: str) -> list[E2eCase]:
     cases = []
-    pipeline_fn = rec_only_pipeline if pipeline == "rec-only" else full_pipeline
     for image in images:
         image_path = fixture_image_path(python_repo, image)
         name = image_path.stem.replace("-", "_")
         display = Path(display_path(python_repo, image_path))
+        if pipeline == "det-only":
+            cases.append(E2eCase(f"{name}_det_only", display, det_only_pipeline()))
+            continue
+
+        pipeline_fn = rec_only_pipeline if pipeline == "rec-only" else full_pipeline
         suffix = "rec_only_" if pipeline == "rec-only" else ""
         cases.append(E2eCase(f"{name}_{suffix}cls", display, pipeline_fn(True)))
         cases.append(E2eCase(f"{name}_{suffix}no_cls", display, pipeline_fn(False)))
@@ -110,8 +118,10 @@ def default_cases() -> list[E2eCase]:
     return [
         E2eCase("ch_en_num_cls", Path("python/tests/test_files/ch_en_num.jpg"), full_pipeline(True)),
         E2eCase("ch_en_num_no_cls", Path("python/tests/test_files/ch_en_num.jpg"), full_pipeline(False)),
+        E2eCase("ch_en_num_det_only", Path("python/tests/test_files/ch_en_num.jpg"), det_only_pipeline()),
         E2eCase("text_det_cls", Path("python/tests/test_files/text_det.jpg"), full_pipeline(True)),
         E2eCase("text_det_no_cls", Path("python/tests/test_files/text_det.jpg"), full_pipeline(False)),
+        E2eCase("text_det_det_only", Path("python/tests/test_files/text_det.jpg"), det_only_pipeline()),
         E2eCase("en_cls", Path("python/tests/test_files/en.jpg"), full_pipeline(True)),
         E2eCase("en_no_cls", Path("python/tests/test_files/en.jpg"), full_pipeline(False)),
         E2eCase("empty_black_cls", Path("python/tests/test_files/empty_black.jpg"), full_pipeline(True)),
@@ -186,20 +196,31 @@ def display_path(base: Path, path: Path) -> str:
 
 
 def export_one(path: Path, image: str, pipeline: dict[str, bool], result, tolerances=None) -> None:
-    txts = list(result.txts or [])
-    scores = list(result.scores or [])
-    boxes = result_boxes(result, len(txts))
     lines = []
-    for box, text, score in zip(boxes, txts, scores):
-        if not str(text).strip():
-            continue
-        lines.append(
-            {
-                "bbox": [[float(x), float(y)] for x, y in box],
-                "text": text,
-                "score": float(score),
-            }
-        )
+    if pipeline["use_rec"]:
+        txts = list(result.txts or [])
+        scores = list(result.scores or [])
+        boxes = result_boxes(result, len(txts))
+        for box, text, score in zip(boxes, txts, scores):
+            if not str(text).strip():
+                continue
+            lines.append(
+                {
+                    "bbox": [[float(x), float(y)] for x, y in box],
+                    "text": text,
+                    "score": float(score),
+                }
+            )
+    else:
+        boxes = result_boxes(result, 0)
+        for box in boxes:
+            lines.append(
+                {
+                    "bbox": [[float(x), float(y)] for x, y in box],
+                    "text": "",
+                    "score": 0.0,
+                }
+            )
 
     payload = {
         "source": "python-rapidocr",
