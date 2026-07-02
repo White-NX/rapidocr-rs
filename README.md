@@ -201,7 +201,7 @@ The current e2e fixtures cover:
 - `short.png` with cls enabled and disabled.
 - `black_font_color_transparent.png` with cls enabled and disabled.
 - `img_exif_orientation.jpg` with cls enabled and disabled.
-- `ch_doc_server.png` with cls enabled.
+- `ch_doc_server.png` with cls enabled and detection-only.
 - `test_letterbox_like.jpg` with cls enabled and disabled.
 - `test_without_det.jpg` with cls enabled and disabled.
 - `return_word_debug.jpg` with cls enabled.

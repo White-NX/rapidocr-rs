@@ -134,6 +134,7 @@ def default_cases() -> list[E2eCase]:
         E2eCase("empty_black_no_cls", Path("python/tests/test_files/empty_black.jpg"), full_pipeline(False)),
         E2eCase("short_cls", Path("python/tests/test_files/short.png"), full_pipeline(True)),
         E2eCase("short_no_cls", Path("python/tests/test_files/short.png"), full_pipeline(False)),
+        E2eCase("ch_doc_server_det_only", Path("python/tests/test_files/ch_doc_server.png"), det_only_pipeline()),
         E2eCase("test_letterbox_like_cls", Path("python/tests/test_files/test_letterbox_like.jpg"), full_pipeline(True)),
         E2eCase("test_letterbox_like_no_cls", Path("python/tests/test_files/test_letterbox_like.jpg"), full_pipeline(False)),
         E2eCase("test_without_det_cls", Path("python/tests/test_files/test_without_det.jpg"), full_pipeline(True)),

@@ -16,7 +16,7 @@ The current e2e parity fixtures cover:
 - `short.png`
 - `black_font_color_transparent.png`
 - `img_exif_orientation.jpg`
-- `ch_doc_server.png` with cls enabled
+- `ch_doc_server.png` with cls enabled and detection-only
 - `test_letterbox_like.jpg`
 - `test_without_det.jpg`
 - `text_vertical_words.png`
@@ -41,6 +41,7 @@ Current representative metrics:
 - `black_font_color_transparent.png`: 3/3 lines matched, exact text match, mean center drift about 1.03 px.
 - `img_exif_orientation.jpg`: 1/1 line matched, exact text match, mean center drift about 0.45 px.
 - `ch_doc_server.png` with cls enabled: 2/2 lines matched, exact text match, mean corner drift about 0.45 px.
+- `ch_doc_server.png` detection-only: 2/2 boxes matched, mean center drift about 0.24 px, mean corner drift about 0.45 px.
 - `test_letterbox_like.jpg`: 2/2 lines matched, character accuracy about 0.994.
 - `test_without_det.jpg`: 1/1 line matched, exact text match, mean center drift about 0.09 px.
 - `text_vertical_words.png`: 3/3 lines matched, exact text match.
@@ -89,6 +90,7 @@ Current candidate behavior:
 - Python detects short lines such as `中国`, `我`, and `是`.
 - Rust now matches `black_font_color_transparent.png` in the full OCR pipeline and DBPostProcess gate after alpha-channel images are composited onto a high-contrast background.
 - `white_font_color_transparent.png` now matches the main three text lines in the full OCR pipeline, but Python still emits an additional low-confidence `_` line with score about 0.525 that Rust does not emit.
+- `white_font_color_transparent.png` also fails the detection-only e2e gate: Rust emits 4 boxes while Python emits 5, with mean corner drift about 12 px on the matched boxes.
 - `white_font_color_transparent.png` also still does not pass DBPostProcess parity: Python emits 5 candidates while Rust emits 4, with mean corner drift about 12 px on the matched candidates.
 
 Impact:
@@ -126,12 +128,13 @@ Observed on `ch_doc_server.png`.
 Current candidate behavior:
 
 - Rust now matches Python's cls-enabled e2e output after edge-near perspective crops replicate border pixels like OpenCV.
+- The image is now also a strict detection-only geometry gate: 2/2 boxes matched with mean center drift about 0.24 px.
 - With cls disabled, Python recognizes the tiny top-border crop as `1113C`; Rust recognizes it as `1115C`.
 - DBPostProcess candidate testing with the Python detector `pred.npy` still shows Rust emits 3 candidates while Python emits 2.
 
 Impact:
 
-- The image is a strict cls-enabled e2e gate for tiny edge text.
+- The image is a strict cls-enabled e2e and detection-only geometry gate for tiny edge text.
 - It is not a strict no-cls e2e or DBPostProcess gate yet.
 
 Next step:

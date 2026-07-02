@@ -1,0 +1,56 @@
+{
+  "source": "python-rapidocr",
+  "image": "python/tests/test_files/ch_doc_server.png",
+  "use_cls": false,
+  "lines": [
+    {
+      "bbox": [
+        [
+          18.0,
+          1.0
+        ],
+        [
+          157.0,
+          2.0
+        ],
+        [
+          157.0,
+          72.0
+        ],
+        [
+          18.0,
+          71.0
+        ]
+      ],
+      "text": "",
+      "score": 0.0
+    },
+    {
+      "bbox": [
+        [
+          227.0,
+          0.0
+        ],
+        [
+          258.0,
+          0.0
+        ],
+        [
+          258.0,
+          4.0
+        ],
+        [
+          227.0,
+          4.0
+        ]
+      ],
+      "text": "",
+      "score": 0.0
+    }
+  ],
+  "pipeline": {
+    "use_det": true,
+    "use_cls": false,
+    "use_rec": false
+  }
+}

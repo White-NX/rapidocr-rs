@@ -127,7 +127,7 @@ Current strict e2e coverage:
 - `empty_black.jpg` and `short.png` with cls enabled and disabled.
 - `black_font_color_transparent.png` with cls enabled and disabled for transparent-background handling.
 - `img_exif_orientation.jpg` with cls enabled and disabled for EXIF orientation handling.
-- `ch_doc_server.png` with cls enabled for tiny edge text.
+- `ch_doc_server.png` with cls enabled and detection-only for tiny edge text.
 - `test_letterbox_like.jpg` and `test_without_det.jpg` with cls enabled and disabled.
 - `return_word_debug.jpg` with cls enabled for slanted text and digit-string recognition.
 - `text_vertical_words.png` with cls enabled and disabled.
@@ -173,6 +173,7 @@ Tasks:
   - `arabic.png`
   - `cyrillic.png`
   - `devanagari.jpg`
+  - `ch_doc_server.png`
   - `japan.jpg`
   - `korean.jpg`
   - count and geometry are gated without recognition text/score checks
