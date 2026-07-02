@@ -27,7 +27,7 @@ The current e2e parity fixtures cover:
 - `text_cls.jpg` as a recognition-only cls/no-cls 180-degree crop check
 - `text_cls.jpg` as a Rust cls/no-cls golden
 
-The current DBPostProcess parity fixtures additionally cover `black_font_color_transparent.png`, `return_word_debug.jpg`, `short.png`, `test_without_det.jpg`, and `ch_doc_server.png`.
+The current DBPostProcess parity fixtures additionally cover `black_font_color_transparent.png`, `return_word_debug.jpg`, `short.png`, `test_without_det.jpg`, `ch_doc_server.png`, `check_return_word_len.jpeg`, `arabic.png`, `devanagari.jpg`, and `japan.jpg`.
 
 Current representative metrics:
 
@@ -43,6 +43,8 @@ Current representative metrics:
 - `ch_doc_server.png` with cls enabled: 2/2 lines matched, exact text match, mean corner drift about 0.45 px.
 - `ch_doc_server.png` detection-only: 2/2 boxes matched, mean center drift about 0.24 px, mean corner drift about 0.45 px.
 - `ch_doc_server.png` DBPostProcess: 2/2 candidates matched with zero geometry drift after output rounding.
+- `check_return_word_len.jpeg` DBPostProcess: 28/28 candidates matched, mean center drift about 0.63 px, mean corner drift about 0.94 px.
+- Cross-language DBPostProcess: `arabic.png` 2/2, `devanagari.jpg` 4/4, and `japan.jpg` 7/7 candidates matched with mean center drift below 0.66 px.
 - `test_letterbox_like.jpg`: 2/2 lines matched, character accuracy about 0.994.
 - `test_without_det.jpg`: 1/1 line matched, exact text match, mean center drift about 0.09 px.
 - `text_vertical_words.png`: 3/3 lines matched, exact text match.
@@ -148,12 +150,13 @@ Observed on `check_return_word_len.jpeg`.
 Current candidate behavior:
 
 - The image is now a strict detection-only geometry gate: 28/28 boxes matched, mean center drift about 0.58 px, and mean corner drift about 0.92 px.
+- It is also now a strict DBPostProcess gate: 28/28 candidates matched, mean center drift about 0.63 px, and mean corner drift about 0.94 px.
 - Text parity is not strict enough yet: exact text ratio about 0.57 and character accuracy about 0.934, below the current global 0.96 gate.
 
 Impact:
 
 - Detection layout is close enough to be useful, but recognition drift across many dense small text lines would make it a weak strict e2e gate.
-- The detection-only fixture protects the stable layout behavior while recognition remains out of the strict gate.
+- The detection-only and DBPostProcess fixtures protect the stable layout behavior while recognition remains out of the strict gate.
 
 Next step:
 
