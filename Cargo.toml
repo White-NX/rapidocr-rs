@@ -8,4 +8,4 @@ resolver = "2"
 [workspace.package]
 edition = "2021"
 license = "Apache-2.0"
-repository = "https://github.com/RapidAI/rapidocr-rs"
+repository = "https://github.com/White-NX/rapidocr-rs"
