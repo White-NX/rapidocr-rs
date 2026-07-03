@@ -161,7 +161,7 @@ fn mean_timings(timings: &[OcrTimings]) -> OcrTimings {
     for timing in timings {
         out.add_assign(timing);
     }
-    out.div(timings.len().max(1) as f64)
+    out.div_by(timings.len().max(1) as f64)
 }
 
 fn select_model_set(name: &str) -> Result<&'static ModelSetSpec> {

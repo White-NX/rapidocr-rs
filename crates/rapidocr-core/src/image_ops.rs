@@ -224,7 +224,7 @@ fn crop_perspective_ordered(img: &RgbImage, bbox: &Quad) -> Result<RgbImage> {
     ];
 
     let Some(projection) = Projection::from_control_points(from, to) else {
-        return crop_axis_aligned(img, &bbox);
+        return crop_axis_aligned(img, bbox);
     };
 
     let mut out = ImageBuffer::from_pixel(crop_w, crop_h, Rgb([0, 0, 0]));

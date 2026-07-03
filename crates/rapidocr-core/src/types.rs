@@ -229,7 +229,7 @@ impl OcrTimings {
         self.total_ms += other.total_ms;
     }
 
-    pub fn div(self, denominator: f64) -> Self {
+    pub fn div_by(self, denominator: f64) -> Self {
         if denominator == 0.0 {
             return self;
         }
