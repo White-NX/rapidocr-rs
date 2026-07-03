@@ -11,6 +11,10 @@ Rust ONNX Runtime OCR core for RapidOCR-style detection, optional text-line orie
 
 The implementation is focused on the Rust core. It is not a full replacement for the Python RapidOCR package, and it does not include Python bindings, visualization parity, training, or non-ONNX inference backends.
 
+## Project Origin
+
+Building upon the existing ONNX models from RapidOCR, we developed this project using graphics algorithms that closely replicate the original functionality, all while avoiding dependencies on `cv2` (which can be difficult to compile). This enables developers to implement efficient OCR inference without relying on Python or complex libraries.
+
 ## Status
 
 The workspace can run `det -> optional cls -> rec` with registered ONNX model sets. The detector postprocess is an OpenCV-free Rust implementation that approximates Python RapidOCR's `DBPostProcess`; parity gaps are tracked separately in [parity-gaps.md](parity-gaps.md).
