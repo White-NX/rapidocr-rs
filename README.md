@@ -41,7 +41,30 @@ Out of scope for phase 1:
 rapidocr-rs/
   crates/
     rapidocr-core/  # OCR pipeline and backend abstraction
-    rapidocr-cli/   # Thin command-line wrapper for validation
+    rapidocr-cli/   # Thin command-line wrapper for validation; built from the workspace
+```
+
+## Test Entrypoints
+
+Use the default Rust test path as the fast local gate. It does not require the external Python RapidOCR checkout or downloaded ONNX models:
+
+```powershell
+cargo fmt --check
+cargo check
+cargo test
+```
+
+Run the DBPostProcess fixture gate directly when working on detector postprocess behavior:
+
+```powershell
+cargo test -p rapidocr-core db_postprocess -- --nocapture
+```
+
+Run the full end-to-end parity gate explicitly. It is marked ignored because it requires downloaded models in `models`, Python test images from the external RapidOCR repository, and takes several minutes on the current fixture set:
+
+```powershell
+$env:RAPIDOCR_PYTHON_REPO = "D:\projects\RapidOCR"
+cargo test -p rapidocr-core e2e_output_tracks_golden_metrics -- --ignored --nocapture
 ```
 
 ## Current Status
@@ -83,27 +106,73 @@ Run with a TOML config:
 cargo run -p rapidocr-cli -- --image "$env:RAPIDOCR_PYTHON_REPO\python\tests\test_files\ch_en_num.jpg" --config config\ppocrv6-small.toml
 ```
 
+Select a registered model set when generating a config or preparing the model cache. The current registry contains:
+
+- `ppocrv6-small` (default)
+- `ppocrv6-tiny`
+- `ppocrv6-medium`
+- `ppocrv4-en-mobile`
+- `ppocrv5-en-mobile`
+- `ppocrv5-ch-server`
+
+```powershell
+cargo run -p rapidocr-cli -- --model-set ppocrv6-small --write-default-config config\ppocrv6-small.toml --model-dir models
+cargo run -p rapidocr-cli -- --model-set ppocrv6-small --image "$env:RAPIDOCR_PYTHON_REPO\python\tests\test_files\ch_en_num.jpg" --model-dir models
+cargo run -p rapidocr-cli -- --model-set ppocrv5-en-mobile --image "$env:RAPIDOCR_PYTHON_REPO\python\tests\test_files\en_rec.jpg" --model-dir models --no-det --no-cls
+```
+
 ## Public API And Configuration
 
-The library API and CLI use the same `RapidOcrConfig` model. The default model set is exposed as data through `PPOCRV6_SMALL`, and model cache behavior is explicit through `ModelCache` and `ModelDownloadMode`.
+The library API and CLI use the same `RapidOcrConfig` model. Registered model sets are exposed as data through `available_model_sets`, `model_set_by_name`, `PPOCRV6_SMALL`, `PPOCRV6_TINY`, `PPOCRV6_MEDIUM`, `PPOCRV4_EN_MOBILE`, `PPOCRV5_EN_MOBILE`, and `PPOCRV5_CH_SERVER`; model cache behavior is explicit through `ModelCache` and `ModelDownloadMode`.
 The CLI applies pipeline overrides before preparing the model cache, so disabled stages do not require their model files.
 
 ```rust
 use rapidocr_core::{
     config::PipelineConfig,
-    model::{ModelCache, ModelDownloadMode, PPOCRV6_SMALL},
+    model::{model_set_by_name, ModelCache, ModelDownloadMode},
     RapidOcr,
 };
 
+let model_set = model_set_by_name("ppocrv6-small").unwrap();
 let cache = ModelCache::new("models");
-cache.ensure_model_set(&PPOCRV6_SMALL, ModelDownloadMode::Missing)?;
+cache.ensure_model_set(model_set, ModelDownloadMode::Missing)?;
 
 let cfg = cache
-    .config_for(&PPOCRV6_SMALL)
+    .config_for(model_set)
     .with_pipeline(PipelineConfig::without_cls());
 let mut ocr = RapidOcr::from_config(cfg)?;
 let output = ocr.run_path("D:/projects/RapidOCR/python/tests/test_files/ch_en_num.jpg")?;
 ```
+
+## Model Packaging Policy
+
+The Rust crates do not bundle ONNX models or dictionaries. Model files are large, model selection depends on language and deployment needs, and model licensing/distribution should remain explicit for applications.
+
+Projects using `rapidocr-core` should choose one of these model strategies:
+
+- Use `ModelCache::ensure_model_set(..., ModelDownloadMode::Missing)` at install time, first run, or startup to download registered model assets and verify hashes when available.
+- Pre-populate a model directory in CI, Docker images, installers, or release archives, then run with `ModelDownloadMode::Never` or CLI `--no-download`.
+- Provide explicit `model_path` and `dict_path` values in TOML config when models are managed by the application, an internal artifact store, or an offline deployment process.
+
+The default model directory is `models`, which is ignored by git. Application packages may bundle model files at their own layer, but the reusable Rust crates stay code-only.
+
+## Examples
+
+Run the library example with any local image path. It downloads missing default model assets unless `RAPIDOCR_MODEL_DIR` already points at a populated model directory:
+
+```powershell
+cargo run -p rapidocr-core --example library_usage -- "$env:RAPIDOCR_PYTHON_REPO\python\tests\test_files\ch_en_num.jpg"
+```
+
+Select a non-default registered model set for the example:
+
+```powershell
+$env:RAPIDOCR_MODEL_SET = "ppocrv5-en-mobile"
+$env:RAPIDOCR_PIPELINE = "rec-only"
+cargo run -p rapidocr-core --example library_usage -- "$env:RAPIDOCR_PYTHON_REPO\python\tests\test_files\en_rec.jpg"
+```
+
+CLI usage examples are collected in `examples\cli_usage.ps1`.
 
 The generated TOML contains a `[pipeline]` section:
 
@@ -194,7 +263,7 @@ python .\tools\export_e2e_fixture.py
 Run the e2e metric test:
 
 ```powershell
-cargo test -p rapidocr-core e2e_output_tracks_golden_metrics -- --nocapture
+cargo test -p rapidocr-core e2e_output_tracks_golden_metrics -- --ignored --nocapture
 ```
 
 To evaluate e2e candidates without committing them, export to a temporary directory and point the test at it:
@@ -202,7 +271,7 @@ To evaluate e2e candidates without committing them, export to a temporary direct
 ```powershell
 python .\tools\export_e2e_fixture.py --out-dir target\e2e_candidates --image python\tests\test_files\en_rec.jpg --pipeline rec-only
 $env:RAPIDOCR_E2E_FIXTURE_ROOT = "D:\projects\rapidocr-rs\target\e2e_candidates"
-cargo test -p rapidocr-core e2e_output_tracks_golden_metrics -- --nocapture
+cargo test -p rapidocr-core e2e_output_tracks_golden_metrics -- --ignored --nocapture
 ```
 
 Use `--pipeline det-only` to evaluate detection-only geometry candidates.
@@ -239,9 +308,18 @@ The current e2e fixtures cover:
 - `text_cls.jpg` recognition-only with cls enabled and disabled.
 - `text_cls.jpg` as a Rust golden for the cls/no-cls pipeline switch.
 
-The test checks line count, nearest-center matching, exact text ratio, character accuracy, score drift, center drift, and corner drift. Detection-only fixtures skip recognition text/score gates and keep the count and geometry gates. It requires downloaded models in `models` and Python test images from `RAPIDOCR_PYTHON_REPO`.
+The test checks line count, nearest-center matching, exact text ratio, character accuracy, score drift, center drift, and corner drift. Detection-only fixtures skip recognition text/score gates and keep the count and geometry gates. It is an ignored parity test, so run it explicitly with `-- --ignored`; it requires downloaded models in `models` and Python test images from `RAPIDOCR_PYTHON_REPO`.
 Fixtures use the default metric gates unless the JSON contains a `tolerances` object for a known, documented metric difference.
 Fixtures may also contain a `pipeline` object with `use_det`, `use_cls`, and `use_rec` for non-default pipeline coverage such as recognition-only cls behavior and detection-only geometry checks.
+
+Run the model-matrix smoke gate explicitly when validating non-default model sets. It currently checks PP-OCRv4 and PP-OCRv5 English mobile recognition models on the `en_rec.jpg` recognition-only fixture:
+
+```powershell
+$env:RAPIDOCR_PYTHON_REPO = "D:\projects\RapidOCR"
+cargo run -p rapidocr-cli -- --model-set ppocrv4-en-mobile --image "$env:RAPIDOCR_PYTHON_REPO\python\tests\test_files\en_rec.jpg" --model-dir models --no-det --no-cls
+cargo run -p rapidocr-cli -- --model-set ppocrv5-en-mobile --image "$env:RAPIDOCR_PYTHON_REPO\python\tests\test_files\en_rec.jpg" --model-dir models --no-det --no-cls
+cargo test -p rapidocr-core non_default_model_sets_run_rec_only_smoke -- --ignored --nocapture
+```
 
 Instead of setting the environment variable every time, create a local ignored `config/local.toml`:
 

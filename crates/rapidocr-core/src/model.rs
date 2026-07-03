@@ -17,12 +17,69 @@ pub const PPOCRV6_REC_SMALL_URL: &str =
     "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.0/onnx/PP-OCRv6/rec/PP-OCRv6_rec_small.onnx";
 pub const PPOCRV6_REC_SMALL_SHA256: &str =
     "6f327246b50388f3c176ae304bd95767ea6dc0c9ae92153ef8cbe210b3c14884";
+pub const PPOCRV6_DET_TINY_URL: &str =
+    "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.0/onnx/PP-OCRv6/det/PP-OCRv6_det_tiny.onnx";
+pub const PPOCRV6_DET_TINY_SHA256: &str =
+    "f42c0fbd294d95eac1a550e131b277dac97462c8025fa4b6c3cec1b7894bd3d5";
+pub const PPOCRV6_REC_TINY_URL: &str =
+    "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.0/onnx/PP-OCRv6/rec/PP-OCRv6_rec_tiny.onnx";
+pub const PPOCRV6_REC_TINY_SHA256: &str =
+    "e16e242de5937ad92609223f19bc2aff3727ee40b095f996907c24749bad251b";
+pub const PPOCRV6_DET_MEDIUM_URL: &str =
+    "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.0/onnx/PP-OCRv6/det/PP-OCRv6_det_medium.onnx";
+pub const PPOCRV6_DET_MEDIUM_SHA256: &str =
+    "92078b7355007ccfffcd4c8cd441a3afd4538904d06881b29a155e1e679907c2";
+pub const PPOCRV6_REC_MEDIUM_URL: &str =
+    "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.0/onnx/PP-OCRv6/rec/PP-OCRv6_rec_medium.onnx";
+pub const PPOCRV6_REC_MEDIUM_SHA256: &str =
+    "eef444829dbbe18d7fea59a3f6eb75647518d2b3a9568d27c92e42940204894b";
 pub const PPOCRV4_CLS_URL: &str =
     "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.0/onnx/PP-OCRv4/cls/ch_ppocr_mobile_v2.0_cls_mobile.onnx";
 pub const PPOCRV4_CLS_SHA256: &str =
     "e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c";
 pub const PPOCRV6_DICT_URL: &str =
     "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/master/paddle/PP-OCRv6/rec/PP-OCRv6_rec_small/ppocrv6_dict.txt";
+pub const PPOCRV6_TINY_DICT_URL: &str =
+    "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/master/paddle/PP-OCRv6/rec/PP-OCRv6_rec_tiny/ppocrv6_tiny_dict.txt";
+pub const PPOCRV4_EN_DET_MOBILE_URL: &str =
+    "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.0/onnx/PP-OCRv4/det/en_PP-OCRv3_det_mobile.onnx";
+pub const PPOCRV4_EN_DET_MOBILE_SHA256: &str =
+    "ea07c15d38ac40cd69da3c493444ec75b44ff23840553ff8ba102c1219ed39c2";
+pub const PPOCRV4_EN_REC_MOBILE_URL: &str =
+    "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.0/onnx/PP-OCRv4/rec/en_PP-OCRv4_rec_mobile.onnx";
+pub const PPOCRV4_EN_REC_MOBILE_SHA256: &str =
+    "e8770c967605983d1570cdf5352041dfb68fa0c21664f49f47b155abd3e0e318";
+pub const PPOCRV4_EN_DICT_URL: &str =
+    "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.0/paddle/PP-OCRv4/rec/en_PP-OCRv4_rec_mobile/en_dict.txt";
+pub const PPOCRV5_CH_DET_MOBILE_URL: &str =
+    "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.0/onnx/PP-OCRv5/det/ch_PP-OCRv5_det_mobile.onnx";
+pub const PPOCRV5_CH_DET_MOBILE_SHA256: &str =
+    "4d97c44a20d30a81aad087d6a396b08f786c4635742afc391f6621f5c6ae78ae";
+pub const PPOCRV5_CH_DET_SERVER_URL: &str =
+    "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.0/onnx/PP-OCRv5/det/ch_PP-OCRv5_det_server.onnx";
+pub const PPOCRV5_CH_DET_SERVER_SHA256: &str =
+    "0f8846b1d4bba223a2a2f9d9b44022fbc22cc019051a602b41a7fda9667e4cad";
+pub const PPOCRV5_CH_REC_SERVER_URL: &str =
+    "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.0/onnx/PP-OCRv5/rec/ch_PP-OCRv5_rec_server.onnx";
+pub const PPOCRV5_CH_REC_SERVER_SHA256: &str =
+    "e09385400eaaaef34ceff54aeb7c4f0f1fe014c27fa8b9905d4709b65746562a";
+pub const PPOCRV5_EN_REC_MOBILE_URL: &str =
+    "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.0/onnx/PP-OCRv5/rec/en_PP-OCRv5_rec_mobile.onnx";
+pub const PPOCRV5_EN_REC_MOBILE_SHA256: &str =
+    "c3461add59bb4323ecba96a492ab75e06dda42467c9e3d0c18db5d1d21924be8";
+pub const PPOCRV5_CLS_MOBILE_URL: &str =
+    "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.0/onnx/PP-OCRv5/cls/ch_PP-LCNet_x0_25_textline_ori_cls_mobile.onnx";
+pub const PPOCRV5_CLS_MOBILE_SHA256: &str =
+    "54379ae5174d026780215fc748a7f31910dee36818e63d49e17dc598ecc82df7";
+pub const PPOCRV5_CLS_SERVER_URL: &str =
+    "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.0/onnx/PP-OCRv5/cls/ch_PP-LCNet_x1_0_textline_ori_cls_server.onnx";
+pub const PPOCRV5_CLS_SERVER_SHA256: &str =
+    "7d3c02ef6c7da8ae08b4347cc7695b2081aae68c325d64375724ecf39c99e743";
+pub const PPOCRV5_DICT_URL: &str =
+    "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.0/paddle/PP-OCRv5/rec/ch_PP-OCRv5_rec_server/ppocrv5_dict.txt";
+pub const PPOCRV5_EN_DICT_URL: &str =
+    "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.0/paddle/PP-OCRv5/rec/en_PP-OCRv5_rec_mobile/ppocrv5_en_dict.txt";
+pub const DEFAULT_MODEL_SET_NAME: &str = "ppocrv6-small";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ModelAssetKind {
@@ -41,31 +98,67 @@ pub struct ModelAssetSpec {
     pub sha256: Option<&'static str>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ModelSetSpec {
     pub name: &'static str,
-    pub det: ModelAssetSpec,
-    pub cls: ModelAssetSpec,
-    pub rec: ModelAssetSpec,
+    pub family: &'static str,
+    pub det: DetModelSpec,
+    pub cls: ClsModelSpec,
+    pub rec: RecModelSpec,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DetModelSpec {
+    pub asset: ModelAssetSpec,
+    pub limit_side_len: u32,
+    pub limit_type: LimitType,
+    pub mean: [f32; 3],
+    pub std: [f32; 3],
+    pub thresh: f32,
+    pub box_thresh: f32,
+    pub max_candidates: usize,
+    pub unclip_ratio: f32,
+    pub min_size: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ClsModelSpec {
+    pub asset: ModelAssetSpec,
+    pub image_shape: [usize; 3],
+    pub batch_size: usize,
+    pub thresh: f32,
+    pub labels: &'static [&'static str],
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RecModelSpec {
+    pub asset: ModelAssetSpec,
     pub dict: ModelAssetSpec,
+    pub image_shape: [usize; 3],
+    pub batch_size: usize,
 }
 
 impl ModelSetSpec {
     pub fn assets(&self) -> [ModelAssetSpec; 4] {
-        [self.det, self.cls, self.rec, self.dict]
+        [
+            self.det.asset,
+            self.cls.asset,
+            self.rec.asset,
+            self.rec.dict,
+        ]
     }
 
     pub fn assets_for_pipeline(&self, pipeline: PipelineConfig) -> Vec<ModelAssetSpec> {
         let mut assets = Vec::new();
         if pipeline.use_det {
-            assets.push(self.det);
+            assets.push(self.det.asset);
         }
         if pipeline.use_cls {
-            assets.push(self.cls);
+            assets.push(self.cls.asset);
         }
         if pipeline.use_rec {
-            assets.push(self.rec);
-            assets.push(self.dict);
+            assets.push(self.rec.asset);
+            assets.push(self.rec.dict);
         }
         assets
     }
@@ -80,65 +173,325 @@ impl ModelSetSpec {
             min_height: 30,
             width_height_ratio: 8.0,
             det: Some(DetConfig {
-                model_path: model_dir.join(self.det.filename),
-                limit_side_len: 736,
-                limit_type: LimitType::Min,
-                mean: [0.5, 0.5, 0.5],
-                std: [0.5, 0.5, 0.5],
-                thresh: 0.3,
-                box_thresh: 0.5,
-                max_candidates: 1000,
-                unclip_ratio: 1.6,
-                min_size: 3,
+                model_path: model_dir.join(self.det.asset.filename),
+                limit_side_len: self.det.limit_side_len,
+                limit_type: self.det.limit_type,
+                mean: self.det.mean,
+                std: self.det.std,
+                thresh: self.det.thresh,
+                box_thresh: self.det.box_thresh,
+                max_candidates: self.det.max_candidates,
+                unclip_ratio: self.det.unclip_ratio,
+                min_size: self.det.min_size,
             }),
             cls: Some(ClsConfig {
-                model_path: model_dir.join(self.cls.filename),
-                image_shape: [3, 48, 192],
-                batch_size: 6,
-                thresh: 0.9,
-                labels: vec!["0".to_string(), "180".to_string()],
+                model_path: model_dir.join(self.cls.asset.filename),
+                image_shape: self.cls.image_shape,
+                batch_size: self.cls.batch_size,
+                thresh: self.cls.thresh,
+                labels: self
+                    .cls
+                    .labels
+                    .iter()
+                    .map(|label| label.to_string())
+                    .collect(),
             }),
             rec: Some(RecConfig {
-                model_path: model_dir.join(self.rec.filename),
-                dict_path: model_dir.join(self.dict.filename),
-                image_shape: [3, 48, 320],
-                batch_size: 6,
+                model_path: model_dir.join(self.rec.asset.filename),
+                dict_path: model_dir.join(self.rec.dict.filename),
+                image_shape: self.rec.image_shape,
+                batch_size: self.rec.batch_size,
             }),
         }
     }
 }
 
+const PPOCRV6_DET_TINY: ModelAssetSpec = ModelAssetSpec {
+    name: "PP-OCRv6 tiny detection model",
+    kind: ModelAssetKind::Detection,
+    filename: "PP-OCRv6_det_tiny.onnx",
+    url: PPOCRV6_DET_TINY_URL,
+    sha256: Some(PPOCRV6_DET_TINY_SHA256),
+};
+
+const PPOCRV6_DET_SMALL: ModelAssetSpec = ModelAssetSpec {
+    name: "PP-OCRv6 small detection model",
+    kind: ModelAssetKind::Detection,
+    filename: "PP-OCRv6_det_small.onnx",
+    url: PPOCRV6_DET_SMALL_URL,
+    sha256: Some(PPOCRV6_DET_SMALL_SHA256),
+};
+
+const PPOCRV6_DET_MEDIUM: ModelAssetSpec = ModelAssetSpec {
+    name: "PP-OCRv6 medium detection model",
+    kind: ModelAssetKind::Detection,
+    filename: "PP-OCRv6_det_medium.onnx",
+    url: PPOCRV6_DET_MEDIUM_URL,
+    sha256: Some(PPOCRV6_DET_MEDIUM_SHA256),
+};
+
+const PPOCRV6_REC_TINY: ModelAssetSpec = ModelAssetSpec {
+    name: "PP-OCRv6 tiny recognition model",
+    kind: ModelAssetKind::Recognition,
+    filename: "PP-OCRv6_rec_tiny.onnx",
+    url: PPOCRV6_REC_TINY_URL,
+    sha256: Some(PPOCRV6_REC_TINY_SHA256),
+};
+
+const PPOCRV6_REC_SMALL: ModelAssetSpec = ModelAssetSpec {
+    name: "PP-OCRv6 small recognition model",
+    kind: ModelAssetKind::Recognition,
+    filename: "PP-OCRv6_rec_small.onnx",
+    url: PPOCRV6_REC_SMALL_URL,
+    sha256: Some(PPOCRV6_REC_SMALL_SHA256),
+};
+
+const PPOCRV6_REC_MEDIUM: ModelAssetSpec = ModelAssetSpec {
+    name: "PP-OCRv6 medium recognition model",
+    kind: ModelAssetKind::Recognition,
+    filename: "PP-OCRv6_rec_medium.onnx",
+    url: PPOCRV6_REC_MEDIUM_URL,
+    sha256: Some(PPOCRV6_REC_MEDIUM_SHA256),
+};
+
+const PPOCRV6_DICT: ModelAssetSpec = ModelAssetSpec {
+    name: "PP-OCRv6 recognition dictionary",
+    kind: ModelAssetKind::Dictionary,
+    filename: "ppocrv6_dict.txt",
+    url: PPOCRV6_DICT_URL,
+    sha256: None,
+};
+
+const PPOCRV6_TINY_DICT: ModelAssetSpec = ModelAssetSpec {
+    name: "PP-OCRv6 tiny recognition dictionary",
+    kind: ModelAssetKind::Dictionary,
+    filename: "ppocrv6_tiny_dict.txt",
+    url: PPOCRV6_TINY_DICT_URL,
+    sha256: None,
+};
+
+const PPOCRV4_CLS: ModelAssetSpec = ModelAssetSpec {
+    name: "PP-OCRv4 text direction classifier",
+    kind: ModelAssetKind::Classification,
+    filename: "ch_ppocr_mobile_v2.0_cls_mobile.onnx",
+    url: PPOCRV4_CLS_URL,
+    sha256: Some(PPOCRV4_CLS_SHA256),
+};
+
+const PPOCRV4_EN_DET_MOBILE: ModelAssetSpec = ModelAssetSpec {
+    name: "PP-OCRv4 English mobile detection model",
+    kind: ModelAssetKind::Detection,
+    filename: "en_PP-OCRv3_det_mobile.onnx",
+    url: PPOCRV4_EN_DET_MOBILE_URL,
+    sha256: Some(PPOCRV4_EN_DET_MOBILE_SHA256),
+};
+
+const PPOCRV4_EN_REC_MOBILE: ModelAssetSpec = ModelAssetSpec {
+    name: "PP-OCRv4 English mobile recognition model",
+    kind: ModelAssetKind::Recognition,
+    filename: "en_PP-OCRv4_rec_mobile.onnx",
+    url: PPOCRV4_EN_REC_MOBILE_URL,
+    sha256: Some(PPOCRV4_EN_REC_MOBILE_SHA256),
+};
+
+const PPOCRV4_EN_DICT: ModelAssetSpec = ModelAssetSpec {
+    name: "PP-OCRv4 English recognition dictionary",
+    kind: ModelAssetKind::Dictionary,
+    filename: "en_dict.txt",
+    url: PPOCRV4_EN_DICT_URL,
+    sha256: None,
+};
+
+const PPOCRV5_CH_DET_MOBILE: ModelAssetSpec = ModelAssetSpec {
+    name: "PP-OCRv5 Chinese mobile detection model",
+    kind: ModelAssetKind::Detection,
+    filename: "ch_PP-OCRv5_det_mobile.onnx",
+    url: PPOCRV5_CH_DET_MOBILE_URL,
+    sha256: Some(PPOCRV5_CH_DET_MOBILE_SHA256),
+};
+
+const PPOCRV5_CH_DET_SERVER: ModelAssetSpec = ModelAssetSpec {
+    name: "PP-OCRv5 Chinese server detection model",
+    kind: ModelAssetKind::Detection,
+    filename: "ch_PP-OCRv5_det_server.onnx",
+    url: PPOCRV5_CH_DET_SERVER_URL,
+    sha256: Some(PPOCRV5_CH_DET_SERVER_SHA256),
+};
+
+const PPOCRV5_CH_REC_SERVER: ModelAssetSpec = ModelAssetSpec {
+    name: "PP-OCRv5 Chinese server recognition model",
+    kind: ModelAssetKind::Recognition,
+    filename: "ch_PP-OCRv5_rec_server.onnx",
+    url: PPOCRV5_CH_REC_SERVER_URL,
+    sha256: Some(PPOCRV5_CH_REC_SERVER_SHA256),
+};
+
+const PPOCRV5_EN_REC_MOBILE: ModelAssetSpec = ModelAssetSpec {
+    name: "PP-OCRv5 English mobile recognition model",
+    kind: ModelAssetKind::Recognition,
+    filename: "en_PP-OCRv5_rec_mobile.onnx",
+    url: PPOCRV5_EN_REC_MOBILE_URL,
+    sha256: Some(PPOCRV5_EN_REC_MOBILE_SHA256),
+};
+
+const PPOCRV5_CLS_MOBILE: ModelAssetSpec = ModelAssetSpec {
+    name: "PP-OCRv5 mobile text-line orientation classifier",
+    kind: ModelAssetKind::Classification,
+    filename: "ch_PP-LCNet_x0_25_textline_ori_cls_mobile.onnx",
+    url: PPOCRV5_CLS_MOBILE_URL,
+    sha256: Some(PPOCRV5_CLS_MOBILE_SHA256),
+};
+
+const PPOCRV5_CLS_SERVER: ModelAssetSpec = ModelAssetSpec {
+    name: "PP-OCRv5 server text-line orientation classifier",
+    kind: ModelAssetKind::Classification,
+    filename: "ch_PP-LCNet_x1_0_textline_ori_cls_server.onnx",
+    url: PPOCRV5_CLS_SERVER_URL,
+    sha256: Some(PPOCRV5_CLS_SERVER_SHA256),
+};
+
+const PPOCRV5_DICT: ModelAssetSpec = ModelAssetSpec {
+    name: "PP-OCRv5 recognition dictionary",
+    kind: ModelAssetKind::Dictionary,
+    filename: "ppocrv5_dict.txt",
+    url: PPOCRV5_DICT_URL,
+    sha256: None,
+};
+
+const PPOCRV5_EN_DICT: ModelAssetSpec = ModelAssetSpec {
+    name: "PP-OCRv5 English recognition dictionary",
+    kind: ModelAssetKind::Dictionary,
+    filename: "ppocrv5_en_dict.txt",
+    url: PPOCRV5_EN_DICT_URL,
+    sha256: None,
+};
+
+const PPOCRV6_DET_PARAMS: DetModelSpec = DetModelSpec {
+    asset: PPOCRV6_DET_SMALL,
+    limit_side_len: 736,
+    limit_type: LimitType::Min,
+    mean: [0.5, 0.5, 0.5],
+    std: [0.5, 0.5, 0.5],
+    thresh: 0.3,
+    box_thresh: 0.5,
+    max_candidates: 1000,
+    unclip_ratio: 1.6,
+    min_size: 3,
+};
+
+const PPOCRV4_CLS_PARAMS: ClsModelSpec = ClsModelSpec {
+    asset: PPOCRV4_CLS,
+    image_shape: [3, 48, 192],
+    batch_size: 6,
+    thresh: 0.9,
+    labels: &["0", "180"],
+};
+
+const PPOCRV5_CLS_PARAMS: ClsModelSpec = ClsModelSpec {
+    asset: PPOCRV5_CLS_MOBILE,
+    image_shape: [3, 80, 160],
+    batch_size: 6,
+    thresh: 0.9,
+    labels: &["0", "180"],
+};
+
+const PPOCRV5_SERVER_CLS_PARAMS: ClsModelSpec = ClsModelSpec {
+    asset: PPOCRV5_CLS_SERVER,
+    image_shape: [3, 80, 160],
+    batch_size: 6,
+    thresh: 0.9,
+    labels: &["0", "180"],
+};
+
+const fn det_with_asset(asset: ModelAssetSpec) -> DetModelSpec {
+    DetModelSpec {
+        asset,
+        ..PPOCRV6_DET_PARAMS
+    }
+}
+
+const fn rec_with_assets(asset: ModelAssetSpec, dict: ModelAssetSpec) -> RecModelSpec {
+    RecModelSpec {
+        asset,
+        dict,
+        image_shape: [3, 48, 320],
+        batch_size: 6,
+    }
+}
+
+pub const PPOCRV6_TINY: ModelSetSpec = ModelSetSpec {
+    name: "ppocrv6-tiny",
+    family: "PP-OCRv6",
+    det: det_with_asset(PPOCRV6_DET_TINY),
+    cls: PPOCRV4_CLS_PARAMS,
+    rec: rec_with_assets(PPOCRV6_REC_TINY, PPOCRV6_TINY_DICT),
+};
+
 pub const PPOCRV6_SMALL: ModelSetSpec = ModelSetSpec {
     name: "ppocrv6-small",
-    det: ModelAssetSpec {
-        name: "PP-OCRv6 small detection model",
-        kind: ModelAssetKind::Detection,
-        filename: "PP-OCRv6_det_small.onnx",
-        url: PPOCRV6_DET_SMALL_URL,
-        sha256: Some(PPOCRV6_DET_SMALL_SHA256),
-    },
-    cls: ModelAssetSpec {
-        name: "PP-OCRv4 text direction classifier",
-        kind: ModelAssetKind::Classification,
-        filename: "ch_ppocr_mobile_v2.0_cls_mobile.onnx",
-        url: PPOCRV4_CLS_URL,
-        sha256: Some(PPOCRV4_CLS_SHA256),
-    },
-    rec: ModelAssetSpec {
-        name: "PP-OCRv6 small recognition model",
-        kind: ModelAssetKind::Recognition,
-        filename: "PP-OCRv6_rec_small.onnx",
-        url: PPOCRV6_REC_SMALL_URL,
-        sha256: Some(PPOCRV6_REC_SMALL_SHA256),
-    },
-    dict: ModelAssetSpec {
-        name: "PP-OCRv6 recognition dictionary",
-        kind: ModelAssetKind::Dictionary,
-        filename: "ppocrv6_dict.txt",
-        url: PPOCRV6_DICT_URL,
-        sha256: None,
-    },
+    family: "PP-OCRv6",
+    det: det_with_asset(PPOCRV6_DET_SMALL),
+    cls: PPOCRV4_CLS_PARAMS,
+    rec: rec_with_assets(PPOCRV6_REC_SMALL, PPOCRV6_DICT),
 };
+
+pub const PPOCRV6_MEDIUM: ModelSetSpec = ModelSetSpec {
+    name: "ppocrv6-medium",
+    family: "PP-OCRv6",
+    det: det_with_asset(PPOCRV6_DET_MEDIUM),
+    cls: PPOCRV4_CLS_PARAMS,
+    rec: rec_with_assets(PPOCRV6_REC_MEDIUM, PPOCRV6_DICT),
+};
+
+pub const PPOCRV4_EN_MOBILE: ModelSetSpec = ModelSetSpec {
+    name: "ppocrv4-en-mobile",
+    family: "PP-OCRv4",
+    det: det_with_asset(PPOCRV4_EN_DET_MOBILE),
+    cls: PPOCRV4_CLS_PARAMS,
+    rec: rec_with_assets(PPOCRV4_EN_REC_MOBILE, PPOCRV4_EN_DICT),
+};
+
+pub const PPOCRV5_EN_MOBILE: ModelSetSpec = ModelSetSpec {
+    name: "ppocrv5-en-mobile",
+    family: "PP-OCRv5",
+    det: det_with_asset(PPOCRV5_CH_DET_MOBILE),
+    cls: PPOCRV5_CLS_PARAMS,
+    rec: rec_with_assets(PPOCRV5_EN_REC_MOBILE, PPOCRV5_EN_DICT),
+};
+
+pub const PPOCRV5_CH_SERVER: ModelSetSpec = ModelSetSpec {
+    name: "ppocrv5-ch-server",
+    family: "PP-OCRv5",
+    det: det_with_asset(PPOCRV5_CH_DET_SERVER),
+    cls: PPOCRV5_SERVER_CLS_PARAMS,
+    rec: rec_with_assets(PPOCRV5_CH_REC_SERVER, PPOCRV5_DICT),
+};
+
+static MODEL_SETS: [ModelSetSpec; 6] = [
+    PPOCRV6_SMALL,
+    PPOCRV6_TINY,
+    PPOCRV6_MEDIUM,
+    PPOCRV4_EN_MOBILE,
+    PPOCRV5_EN_MOBILE,
+    PPOCRV5_CH_SERVER,
+];
+
+pub fn available_model_sets() -> &'static [ModelSetSpec] {
+    &MODEL_SETS
+}
+
+pub fn available_model_set_names() -> Vec<&'static str> {
+    available_model_sets()
+        .iter()
+        .map(|model_set| model_set.name)
+        .collect()
+}
+
+pub fn model_set_by_name(name: &str) -> Option<&'static ModelSetSpec> {
+    available_model_sets()
+        .iter()
+        .find(|model_set| model_set.name.eq_ignore_ascii_case(name))
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ModelDownloadMode {
@@ -314,6 +667,59 @@ mod tests {
     }
 
     #[test]
+    fn non_default_model_sets_build_data_driven_configs() {
+        let v4 = PPOCRV4_EN_MOBILE.config("models");
+        assert_eq!(PPOCRV4_EN_MOBILE.family, "PP-OCRv4");
+        assert_eq!(
+            v4.det.as_ref().unwrap().model_path,
+            PathBuf::from("models/en_PP-OCRv3_det_mobile.onnx")
+        );
+        assert_eq!(
+            v4.rec.as_ref().unwrap().model_path,
+            PathBuf::from("models/en_PP-OCRv4_rec_mobile.onnx")
+        );
+        assert_eq!(
+            v4.rec.as_ref().unwrap().dict_path,
+            PathBuf::from("models/en_dict.txt")
+        );
+        assert_eq!(v4.cls.as_ref().unwrap().image_shape, [3, 48, 192]);
+
+        let v5 = PPOCRV5_EN_MOBILE.config("models");
+        assert_eq!(PPOCRV5_EN_MOBILE.family, "PP-OCRv5");
+        assert_eq!(
+            v5.det.as_ref().unwrap().model_path,
+            PathBuf::from("models/ch_PP-OCRv5_det_mobile.onnx")
+        );
+        assert_eq!(
+            v5.rec.as_ref().unwrap().model_path,
+            PathBuf::from("models/en_PP-OCRv5_rec_mobile.onnx")
+        );
+        assert_eq!(
+            v5.rec.as_ref().unwrap().dict_path,
+            PathBuf::from("models/ppocrv5_en_dict.txt")
+        );
+        assert_eq!(v5.cls.as_ref().unwrap().image_shape, [3, 80, 160]);
+
+        let v5_server = PPOCRV5_CH_SERVER.config("models");
+        assert_eq!(
+            v5_server.det.as_ref().unwrap().model_path,
+            PathBuf::from("models/ch_PP-OCRv5_det_server.onnx")
+        );
+        assert_eq!(
+            v5_server.cls.as_ref().unwrap().model_path,
+            PathBuf::from("models/ch_PP-LCNet_x1_0_textline_ori_cls_server.onnx")
+        );
+        assert_eq!(
+            v5_server.rec.as_ref().unwrap().model_path,
+            PathBuf::from("models/ch_PP-OCRv5_rec_server.onnx")
+        );
+        assert_eq!(
+            v5_server.rec.as_ref().unwrap().dict_path,
+            PathBuf::from("models/ppocrv5_dict.txt")
+        );
+    }
+
+    #[test]
     fn model_set_selects_assets_for_pipeline_switches() {
         let without_cls = PPOCRV6_SMALL.assets_for_pipeline(PipelineConfig::without_cls());
         assert_eq!(without_cls.len(), 3);
@@ -334,6 +740,36 @@ mod tests {
         assert!(recognition_only
             .iter()
             .any(|asset| asset.kind == ModelAssetKind::Dictionary));
+    }
+
+    #[test]
+    fn model_registry_exposes_default_model_set_by_name() {
+        assert_eq!(DEFAULT_MODEL_SET_NAME, PPOCRV6_SMALL.name);
+        assert_eq!(
+            available_model_set_names(),
+            vec![
+                "ppocrv6-small",
+                "ppocrv6-tiny",
+                "ppocrv6-medium",
+                "ppocrv4-en-mobile",
+                "ppocrv5-en-mobile",
+                "ppocrv5-ch-server"
+            ]
+        );
+
+        let model_set = model_set_by_name("ppocrv6-small").unwrap();
+        assert_eq!(model_set.name, PPOCRV6_SMALL.name);
+
+        let model_set = model_set_by_name("PPOCRV6-SMALL").unwrap();
+        assert_eq!(model_set.name, PPOCRV6_SMALL.name);
+
+        let model_set = model_set_by_name("ppocrv5-en-mobile").unwrap();
+        assert_eq!(model_set.family, "PP-OCRv5");
+    }
+
+    #[test]
+    fn model_registry_rejects_unknown_model_set_name() {
+        assert!(model_set_by_name("missing-model-set").is_none());
     }
 
     #[test]

@@ -4,6 +4,7 @@ use serde::Deserialize;
 
 use crate::{
     config::{PipelineConfig, RapidOcrConfig},
+    model::{model_set_by_name, ModelCache},
     types::OcrLine,
     RapidOcr,
 };
@@ -65,6 +66,7 @@ struct ExpectedLine {
 }
 
 #[test]
+#[ignore]
 fn e2e_output_tracks_golden_metrics() {
     let rs_root = rapidocr_rs_root();
     let model_dir = rs_root.join("models");
@@ -158,6 +160,55 @@ fn e2e_output_tracks_golden_metrics() {
         "no e2e fixtures were executed; place models under {}",
         model_dir.display()
     );
+}
+
+#[test]
+#[ignore]
+fn non_default_model_sets_run_rec_only_smoke() {
+    let rs_root = rapidocr_rs_root();
+    let model_dir = rs_root.join("models");
+    let python_repo = python_repo_root(&rs_root);
+    let cache = ModelCache::new(&model_dir);
+    let pipeline = PipelineConfig::recognition_only();
+
+    for model_set_name in ["ppocrv4-en-mobile", "ppocrv5-en-mobile"] {
+        let model_set = model_set_by_name(model_set_name).unwrap();
+        let missing = cache.missing_assets_for_pipeline(model_set, pipeline);
+        assert!(
+            missing.is_empty(),
+            "model matrix smoke for {model_set_name} requires missing assets under {}: {:?}",
+            model_dir.display(),
+            missing
+                .iter()
+                .map(|asset| asset.filename)
+                .collect::<Vec<_>>()
+        );
+
+        let mut cfg = cache.config_for(model_set);
+        cfg.pipeline = pipeline;
+        let mut ocr = RapidOcr::new(cfg).unwrap();
+        let output = ocr
+            .run_path(resolve_python_asset(
+                &python_repo,
+                "python/tests/test_files/en_rec.jpg",
+            ))
+            .unwrap();
+
+        assert_eq!(
+            output.lines.len(),
+            1,
+            "{model_set_name} should recognize the rec-only English fixture as one line"
+        );
+        assert!(
+            !output.lines[0].text.trim().is_empty(),
+            "{model_set_name} produced empty rec-only text"
+        );
+        assert!(
+            output.lines[0].score > 0.5,
+            "{model_set_name} produced unexpectedly low rec-only score: {}",
+            output.lines[0].score
+        );
+    }
 }
 
 fn default_min_exact_text_ratio() -> f32 {

@@ -4,7 +4,10 @@ use anyhow::Result;
 use clap::Parser;
 use rapidocr_core::{
     config::RapidOcrConfig,
-    model::{ModelCache, ModelDownloadMode, PPOCRV6_SMALL},
+    model::{
+        available_model_set_names, model_set_by_name, ModelCache, ModelDownloadMode, ModelSetSpec,
+        DEFAULT_MODEL_SET_NAME,
+    },
     types::OcrTimings,
     RapidOcr,
 };
@@ -20,6 +23,9 @@ struct Args {
 
     #[arg(long, default_value = "models")]
     model_dir: PathBuf,
+
+    #[arg(long, default_value = DEFAULT_MODEL_SET_NAME)]
+    model_set: String,
 
     #[arg(long)]
     write_default_config: Option<PathBuf>,
@@ -50,8 +56,9 @@ fn main() -> Result<()> {
     let args = Args::parse();
 
     if let Some(path) = &args.write_default_config {
+        let model_set = select_model_set(&args.model_set)?;
         let cache = ModelCache::new(&args.model_dir);
-        let mut cfg = cache.config_for(&PPOCRV6_SMALL);
+        let mut cfg = cache.config_for(model_set);
         apply_pipeline_overrides(&mut cfg, &args);
         cfg.write_toml_file(path)?;
         return Ok(());
@@ -70,10 +77,11 @@ fn main() -> Result<()> {
         } else {
             ModelDownloadMode::Missing
         };
-        let mut cfg = cache.config_for(&PPOCRV6_SMALL);
+        let model_set = select_model_set(&args.model_set)?;
+        let mut cfg = cache.config_for(model_set);
         apply_pipeline_overrides(&mut cfg, &args);
         cfg.validate()?;
-        cache.ensure_model_set_for_pipeline(&PPOCRV6_SMALL, cfg.pipeline, mode)?;
+        cache.ensure_model_set_for_pipeline(model_set, cfg.pipeline, mode)?;
         cfg
     };
 
@@ -156,6 +164,15 @@ fn mean_timings(timings: &[OcrTimings]) -> OcrTimings {
     out.div(timings.len().max(1) as f64)
 }
 
+fn select_model_set(name: &str) -> Result<&'static ModelSetSpec> {
+    model_set_by_name(name).ok_or_else(|| {
+        anyhow::anyhow!(
+            "unknown model set {name:?}; available model sets: {}",
+            available_model_set_names().join(", ")
+        )
+    })
+}
+
 fn apply_pipeline_overrides(cfg: &mut RapidOcrConfig, args: &Args) {
     if args.no_det {
         cfg.pipeline.use_det = false;
@@ -166,5 +183,27 @@ fn apply_pipeline_overrides(cfg: &mut RapidOcrConfig, args: &Args) {
     }
     if args.no_cls {
         cfg.pipeline.use_cls = false;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn select_model_set_accepts_default_model_set() {
+        let model_set = select_model_set(DEFAULT_MODEL_SET_NAME).unwrap();
+
+        assert_eq!(model_set.name, DEFAULT_MODEL_SET_NAME);
+    }
+
+    #[test]
+    fn select_model_set_reports_available_names_for_unknown_model_set() {
+        let err = select_model_set("missing-model-set").unwrap_err();
+        let message = err.to_string();
+
+        assert!(message.contains("unknown model set"));
+        assert!(message.contains("missing-model-set"));
+        assert!(message.contains(DEFAULT_MODEL_SET_NAME));
     }
 }
