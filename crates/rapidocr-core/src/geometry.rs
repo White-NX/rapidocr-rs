@@ -1,18 +1,18 @@
 use crate::types::Quad;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Point {
-    pub x: f32,
-    pub y: f32,
+pub(crate) struct Point {
+    pub(crate) x: f32,
+    pub(crate) y: f32,
 }
 
 impl Point {
-    pub fn new(x: f32, y: f32) -> Self {
+    pub(crate) fn new(x: f32, y: f32) -> Self {
         Self { x, y }
     }
 }
 
-pub fn min_area_rect(points: &[Point]) -> Option<Quad> {
+pub(crate) fn min_area_rect(points: &[Point]) -> Option<Quad> {
     if points.len() < 3 {
         return None;
     }
@@ -22,6 +22,8 @@ pub fn min_area_rect(points: &[Point]) -> Option<Quad> {
         return None;
     }
 
+    // OpenCV's minAreaRect is approximated by checking each convex hull edge as
+    // a candidate rectangle angle and selecting the minimum-area projection.
     let mut best: Option<RotatedRect> = None;
     for i in 0..hull.len() {
         let p0 = hull[i];
@@ -67,7 +69,7 @@ pub fn min_area_rect(points: &[Point]) -> Option<Quad> {
     best.map(|rect| rect.to_quad())
 }
 
-pub fn unclip_quad(quad: &Quad, unclip_ratio: f32) -> Option<Vec<Point>> {
+pub(crate) fn unclip_quad(quad: &Quad, unclip_ratio: f32) -> Option<Vec<Point>> {
     let points = quad
         .points
         .iter()
@@ -79,15 +81,17 @@ pub fn unclip_quad(quad: &Quad, unclip_ratio: f32) -> Option<Vec<Point>> {
         return None;
     }
 
+    // DBPostProcess expands text polygons by area * ratio / perimeter, matching
+    // the pyclipper distance formula used by the Python implementation.
     let distance = area * unclip_ratio / perimeter;
     offset_convex_polygon(&points, distance)
 }
 
-pub fn polygon_area(points: &[Point]) -> f32 {
+pub(crate) fn polygon_area(points: &[Point]) -> f32 {
     signed_polygon_area(points).abs()
 }
 
-pub fn polygon_perimeter(points: &[Point]) -> f32 {
+pub(crate) fn polygon_perimeter(points: &[Point]) -> f32 {
     if points.len() < 2 {
         return 0.0;
     }
@@ -136,6 +140,8 @@ fn offset_convex_polygon(points: &[Point], distance: f32) -> Option<Vec<Point>> 
                 return None;
             }
 
+            // The outward normal flips with polygon winding. Getting this sign
+            // wrong shrinks text boxes instead of expanding them.
             let normal = if orientation > 0.0 {
                 Point::new(edge_dy / len, -edge_dx / len)
             } else {

@@ -1,12 +1,20 @@
-pub mod cls;
+//! ONNX Runtime OCR pipeline compatible with RapidOCR-style model layouts.
+//!
+//! The crate exposes a high-level [`RapidOcr`] runner, TOML-compatible
+//! configuration in [`config`], model-set registration and cache helpers in
+//! [`model`], and output data types in [`types`]. Detection, classification,
+//! recognition, image preprocessing, and postprocessing modules are internal
+//! implementation details.
+
+pub(crate) mod cls;
 pub mod config;
-pub mod db_postprocess;
-pub mod det;
-pub mod geometry;
-pub mod image_ops;
-pub mod inference;
+pub(crate) mod db_postprocess;
+pub(crate) mod det;
+pub(crate) mod geometry;
+pub(crate) mod image_ops;
+pub(crate) mod inference;
 pub mod model;
-pub mod rec;
+pub(crate) mod rec;
 pub mod types;
 
 #[cfg(test)]
@@ -27,6 +35,10 @@ use crate::{
     types::{OcrLine, OcrOutput, OcrTimings, Quad, TimedOcrOutput},
 };
 
+/// Stateful OCR pipeline runner.
+///
+/// The runner owns ONNX sessions for the enabled stages. Methods take `&mut self`
+/// because ONNX Runtime session execution is stateful through the backend wrapper.
 pub struct RapidOcr {
     cfg: RapidOcrConfig,
     detector: Option<TextDetector>,
@@ -35,6 +47,10 @@ pub struct RapidOcr {
 }
 
 impl RapidOcr {
+    /// Builds an OCR pipeline from a validated configuration.
+    ///
+    /// Enabled pipeline stages load their ONNX sessions immediately. Disabled
+    /// stages do not require their model files or dictionaries to exist.
     pub fn new(cfg: RapidOcrConfig) -> Result<Self> {
         cfg.validate().context("invalid OCR config")?;
         let detector = if cfg.pipeline.use_det {
@@ -75,22 +91,30 @@ impl RapidOcr {
         })
     }
 
+    /// Alias for [`RapidOcr::new`].
     pub fn from_config(cfg: RapidOcrConfig) -> Result<Self> {
         Self::new(cfg)
     }
 
+    /// Returns the configuration used to construct this pipeline.
     pub fn config(&self) -> &RapidOcrConfig {
         &self.cfg
     }
 
+    /// Returns the enabled pipeline stages.
     pub fn pipeline(&self) -> PipelineConfig {
         self.cfg.pipeline
     }
 
+    /// Loads an image from disk and returns OCR lines without timing details.
+    ///
+    /// Image loading applies EXIF orientation and alpha-channel handling before
+    /// the OCR pipeline runs.
     pub fn run_path(&mut self, image_path: impl AsRef<Path>) -> Result<OcrOutput> {
         Ok(self.run_path_timed(image_path)?.output)
     }
 
+    /// Loads an image from disk and returns OCR lines with stage timings.
     pub fn run_path_timed(&mut self, image_path: impl AsRef<Path>) -> Result<TimedOcrOutput> {
         let total_start = Instant::now();
         let start = Instant::now();
@@ -102,10 +126,16 @@ impl RapidOcr {
         Ok(timed)
     }
 
+    /// Runs OCR on an RGB image already loaded by the caller.
     pub fn run_image(&mut self, image: &image::RgbImage) -> Result<OcrOutput> {
         Ok(self.run_image_timed(image)?.output)
     }
 
+    /// Runs OCR on an RGB image already loaded by the caller and records timings.
+    ///
+    /// With detection disabled, the whole input image is treated as one
+    /// recognition crop. With recognition disabled, the output contains detected
+    /// boxes with empty text and score `0.0`.
     pub fn run_image_timed(&mut self, image: &image::RgbImage) -> Result<TimedOcrOutput> {
         let total_start = Instant::now();
         let mut timings = OcrTimings::default();
@@ -208,6 +238,9 @@ impl RapidOcr {
         let mut boxes = det.boxes;
 
         let start = Instant::now();
+        // Crops are extracted from the exact padded detector image that produced
+        // the boxes. Only after crop generation do we remove padding and scale
+        // coordinates back to the caller's original image space.
         let crops = if needs_crops {
             boxes
                 .iter()

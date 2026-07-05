@@ -10,14 +10,14 @@ use crate::{
     types::{OcrTimings, RecText},
 };
 
-pub struct TextRecognizer {
+pub(crate) struct TextRecognizer {
     cfg: RecConfig,
     session: OnnxSession,
     characters: Vec<String>,
 }
 
 impl TextRecognizer {
-    pub fn new(cfg: RecConfig) -> Result<Self> {
+    pub(crate) fn new(cfg: RecConfig) -> Result<Self> {
         cfg.validate().context("invalid recognition config")?;
         let session = OnnxSession::new(&cfg.model_path).with_context(|| {
             format!(
@@ -33,11 +33,7 @@ impl TextRecognizer {
         })
     }
 
-    pub fn recognize(&mut self, imgs: &[RgbImage]) -> Result<Vec<RecText>> {
-        Ok(self.recognize_timed(imgs)?.texts)
-    }
-
-    pub fn recognize_timed(&mut self, imgs: &[RgbImage]) -> Result<RecognizeResult> {
+    pub(crate) fn recognize_timed(&mut self, imgs: &[RgbImage]) -> Result<RecognizeResult> {
         let mut timings = OcrTimings::default();
         if imgs.is_empty() {
             return Ok(RecognizeResult {
@@ -56,6 +52,8 @@ impl TextRecognizer {
                     f32::max,
                 );
 
+            // PaddleOCR recognition batches are padded to the widest crop in the
+            // batch while preserving the configured input height.
             let batch_w = (self.cfg.image_shape[1] as f32 * max_wh_ratio) as usize;
             let mut batch = Array4::<f32>::zeros((
                 chunk.len(),
@@ -101,6 +99,8 @@ impl TextRecognizer {
         let mut out = ndarray::Array3::<f32>::zeros((channels, img_h, img_w));
         for (x, y, pixel) in resized.enumerate_pixels() {
             for c in 0..3 {
+                // Recognition models expect BGR channel order normalized to
+                // [-1, 1], even though the crate stores images as RGB.
                 out[[c, y as usize, x as usize]] = pixel[2 - c] as f32 / 255.0 / 0.5 - 1.0;
             }
         }
@@ -120,6 +120,8 @@ impl TextRecognizer {
                 .map(|(idx, prob)| (idx, *prob))
                 .unwrap_or((0, 0.0));
 
+            // CTC decode: index 0 is blank and repeated non-blank labels collapse
+            // into a single character.
             if idx == 0 || idx == last_idx {
                 last_idx = idx;
                 continue;
@@ -142,12 +144,15 @@ impl TextRecognizer {
     }
 }
 
-pub struct RecognizeResult {
-    pub texts: Vec<RecText>,
-    pub timings: OcrTimings,
+pub(crate) struct RecognizeResult {
+    pub(crate) texts: Vec<RecText>,
+    pub(crate) timings: OcrTimings,
 }
 
 fn resize_linear_opencv(img: &RgbImage, width: u32, height: u32) -> RgbImage {
+    // Reimplement OpenCV-style bilinear resize for recognition preprocessing.
+    // Small interpolation differences change OCR logits enough to matter in
+    // parity fixtures, so this path avoids image crate sampling differences.
     let src_w = img.width();
     let src_h = img.height();
     let mut out = RgbImage::new(width, height);
@@ -181,6 +186,8 @@ fn linear_bounds(dst: u32, scale: f32, src_len: u32) -> (u32, u32, f32) {
         return (0, 0, 0.0);
     }
 
+    // OpenCV maps destination pixel centers back to source pixel centers with a
+    // half-pixel offset before choosing the two linear interpolation neighbors.
     let src = (dst as f32 + 0.5) * scale - 0.5;
     if src <= 0.0 {
         return (0, 0, 0.0);

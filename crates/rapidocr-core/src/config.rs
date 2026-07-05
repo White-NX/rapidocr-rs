@@ -1,3 +1,9 @@
+//! Configuration types for the OCR pipeline and individual model stages.
+//!
+//! The configuration can be serialized as TOML and is shared by the library API
+//! and the CLI. Stage-specific configs are required only when the corresponding
+//! [`PipelineConfig`] flag is enabled.
+
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -7,27 +13,39 @@ use anyhow::{bail, ensure, Context, Result};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Full OCR pipeline configuration.
 pub struct RapidOcrConfig {
+    /// Stage switches controlling detection, direction classification, and recognition.
     #[serde(default)]
     pub pipeline: PipelineConfig,
+    /// Minimum accepted recognition confidence for detected text lines.
     pub text_score: f32,
+    /// Minimum image side length used by the high-level pipeline resize step.
     pub min_side_len: u32,
+    /// Maximum image side length used by the high-level pipeline resize step.
     pub max_side_len: u32,
+    /// Minimum detector input height after vertical padding.
     pub min_height: u32,
+    /// Maximum width-to-height ratio before vertical padding is applied, or `-1.0` to disable the ratio gate.
     pub width_height_ratio: f32,
+    /// Detection-stage configuration, required when [`PipelineConfig::use_det`] is `true`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub det: Option<DetConfig>,
+    /// Text-line direction classifier configuration, required when [`PipelineConfig::use_cls`] is `true`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cls: Option<ClsConfig>,
+    /// Recognition-stage configuration, required when [`PipelineConfig::use_rec`] is `true`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rec: Option<RecConfig>,
 }
 
 impl RapidOcrConfig {
+    /// Builds the default `ppocrv6-small` configuration rooted at `model_dir`.
     pub fn ppocr_v6_small(model_dir: impl Into<PathBuf>) -> Self {
         crate::model::PPOCRV6_SMALL.config(model_dir)
     }
 
+    /// Reads and validates a TOML configuration file.
     pub fn from_toml_file(path: impl AsRef<Path>) -> Result<Self> {
         let path = path.as_ref();
         let content = fs::read_to_string(path)
@@ -36,6 +54,10 @@ impl RapidOcrConfig {
             .with_context(|| format!("failed to load config {}", path.display()))
     }
 
+    /// Parses and validates a TOML configuration string.
+    ///
+    /// Legacy top-level `use_det`, `use_cls`, and `use_rec` fields are accepted
+    /// and mapped into the nested [`PipelineConfig`].
     pub fn from_toml_str(content: &str) -> Result<Self> {
         let mut parsed: RapidOcrConfigFile =
             toml::from_str(content).context("failed to parse config TOML")?;
@@ -54,6 +76,7 @@ impl RapidOcrConfig {
         Ok(parsed.cfg)
     }
 
+    /// Writes this configuration as pretty TOML after validation.
     pub fn write_toml_file(&self, path: impl AsRef<Path>) -> Result<()> {
         let path = path.as_ref();
         self.validate().context("invalid OCR config")?;
@@ -65,11 +88,13 @@ impl RapidOcrConfig {
         fs::write(path, content).with_context(|| format!("failed to write {}", path.display()))
     }
 
+    /// Serializes this configuration as pretty TOML after validation.
     pub fn to_toml_string(&self) -> Result<String> {
         self.validate().context("invalid OCR config")?;
         toml::to_string_pretty(self).context("failed to serialize config")
     }
 
+    /// Validates field ranges and enabled-stage requirements.
     pub fn validate(&self) -> Result<()> {
         self.pipeline.validate()?;
         ensure_unit_interval(self.text_score, "text_score")?;
@@ -107,6 +132,7 @@ impl RapidOcrConfig {
         Ok(())
     }
 
+    /// Returns a copy of this configuration with replacement pipeline flags.
     pub fn with_pipeline(mut self, pipeline: PipelineConfig) -> Self {
         self.pipeline = pipeline;
         self
@@ -114,13 +140,18 @@ impl RapidOcrConfig {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// Pipeline stage switches.
 pub struct PipelineConfig {
+    /// Enables text box detection.
     pub use_det: bool,
+    /// Enables text-line orientation classification before recognition.
     pub use_cls: bool,
+    /// Enables text recognition.
     pub use_rec: bool,
 }
 
 impl PipelineConfig {
+    /// Enables detection, classification, and recognition.
     pub const fn full() -> Self {
         Self {
             use_det: true,
@@ -129,6 +160,7 @@ impl PipelineConfig {
         }
     }
 
+    /// Enables detection and recognition, skipping orientation classification.
     pub const fn without_cls() -> Self {
         Self {
             use_det: true,
@@ -137,6 +169,7 @@ impl PipelineConfig {
         }
     }
 
+    /// Enables detection only.
     pub const fn detection_only() -> Self {
         Self {
             use_det: true,
@@ -145,6 +178,7 @@ impl PipelineConfig {
         }
     }
 
+    /// Enables recognition on the whole input image, without detection or classification.
     pub const fn recognition_only() -> Self {
         Self {
             use_det: false,
@@ -153,6 +187,7 @@ impl PipelineConfig {
         }
     }
 
+    /// Validates stage combinations.
     pub fn validate(&self) -> Result<()> {
         if !self.use_det && !self.use_rec {
             bail!("at least one of pipeline.use_det or pipeline.use_rec must be true");
@@ -171,20 +206,32 @@ impl Default for PipelineConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Detection-stage model and postprocessing configuration.
 pub struct DetConfig {
+    /// ONNX detection model path.
     pub model_path: PathBuf,
+    /// Side-length limit applied before detection inference.
     pub limit_side_len: u32,
+    /// Whether [`DetConfig::limit_side_len`] applies to the minimum or maximum image side.
     pub limit_type: LimitType,
+    /// Per-channel input normalization mean in RGB order.
     pub mean: [f32; 3],
+    /// Per-channel input normalization standard deviation in RGB order.
     pub std: [f32; 3],
+    /// Probability threshold used to build the DB text mask.
     pub thresh: f32,
+    /// Minimum candidate box confidence accepted by DB postprocessing.
     pub box_thresh: f32,
+    /// Maximum number of detection candidates returned.
     pub max_candidates: usize,
+    /// Expansion ratio applied to DB candidate polygons.
     pub unclip_ratio: f32,
+    /// Minimum candidate size in detector-map pixels.
     pub min_size: u32,
 }
 
 impl DetConfig {
+    /// Validates model paths, numeric ranges, and normalization parameters.
     pub fn validate(&self) -> Result<()> {
         ensure_non_empty_path(&self.model_path, "det.model_path")?;
         ensure!(
@@ -212,20 +259,29 @@ impl DetConfig {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// Side selected by detector resize limiting.
 pub enum LimitType {
+    /// Limit the minimum side.
     Min,
+    /// Limit the maximum side.
     Max,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Recognition-stage model configuration.
 pub struct RecConfig {
+    /// ONNX recognition model path.
     pub model_path: PathBuf,
+    /// Recognition dictionary path, one character or token per line.
     pub dict_path: PathBuf,
+    /// Recognition input tensor shape as `[channels, height, width]`.
     pub image_shape: [usize; 3],
+    /// Maximum number of crops processed per inference call.
     pub batch_size: usize,
 }
 
 impl RecConfig {
+    /// Validates model paths, input shape, and batch size.
     pub fn validate(&self) -> Result<()> {
         ensure_non_empty_path(&self.model_path, "rec.model_path")?;
         ensure_non_empty_path(&self.dict_path, "rec.dict_path")?;
@@ -236,15 +292,22 @@ impl RecConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Text-line orientation classifier configuration.
 pub struct ClsConfig {
+    /// ONNX classification model path.
     pub model_path: PathBuf,
+    /// Classification input tensor shape as `[channels, height, width]`.
     pub image_shape: [usize; 3],
+    /// Maximum number of crops processed per inference call.
     pub batch_size: usize,
+    /// Minimum confidence required before rotating a crop.
     pub thresh: f32,
+    /// Class labels in model output order, commonly `["0", "180"]`.
     pub labels: Vec<String>,
 }
 
 impl ClsConfig {
+    /// Validates model path, input shape, batch size, threshold, and labels.
     pub fn validate(&self) -> Result<()> {
         ensure_non_empty_path(&self.model_path, "cls.model_path")?;
         ensure_image_shape(self.image_shape, "cls.image_shape")?;

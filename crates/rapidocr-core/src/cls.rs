@@ -7,18 +7,18 @@ use ndarray::{s, Array4, Ix2};
 use crate::{config::ClsConfig, inference::OnnxSession, types::OcrTimings};
 
 #[derive(Debug, Clone)]
-pub struct ClsResult {
-    pub label: String,
-    pub score: f32,
+pub(crate) struct ClsResult {
+    pub(crate) label: String,
+    pub(crate) score: f32,
 }
 
-pub struct TextClassifier {
+pub(crate) struct TextClassifier {
     cfg: ClsConfig,
     session: OnnxSession,
 }
 
 impl TextClassifier {
-    pub fn new(cfg: ClsConfig) -> Result<Self> {
+    pub(crate) fn new(cfg: ClsConfig) -> Result<Self> {
         cfg.validate().context("invalid classification config")?;
         let session = OnnxSession::new(&cfg.model_path).with_context(|| {
             format!(
@@ -29,11 +29,7 @@ impl TextClassifier {
         Ok(Self { cfg, session })
     }
 
-    pub fn classify(&mut self, imgs: &[RgbImage]) -> Result<Vec<ClsResult>> {
-        Ok(self.classify_timed(imgs)?.results)
-    }
-
-    pub fn classify_timed(&mut self, imgs: &[RgbImage]) -> Result<ClassifyResult> {
+    pub(crate) fn classify_timed(&mut self, imgs: &[RgbImage]) -> Result<ClassifyResult> {
         let mut timings = OcrTimings::default();
         if imgs.is_empty() {
             return Ok(ClassifyResult {
@@ -83,18 +79,7 @@ impl TextClassifier {
         Ok(ClassifyResult { results, timings })
     }
 
-    pub fn classify_and_rotate(&mut self, imgs: &[RgbImage]) -> Result<Vec<RgbImage>> {
-        Ok(self.classify_and_rotate_timed(imgs)?.imgs)
-    }
-
-    pub fn classify_and_rotate_timed(
-        &mut self,
-        imgs: &[RgbImage],
-    ) -> Result<RotatedClassifyResult> {
-        self.classify_and_rotate_owned_timed(imgs.to_vec())
-    }
-
-    pub fn classify_and_rotate_owned_timed(
+    pub(crate) fn classify_and_rotate_owned_timed(
         &mut self,
         mut imgs: Vec<RgbImage>,
     ) -> Result<RotatedClassifyResult> {
@@ -130,6 +115,8 @@ impl TextClassifier {
         let mut out = ndarray::Array3::<f32>::zeros((channels, img_h, img_w));
         for (x, y, pixel) in resized.enumerate_pixels() {
             for c in 0..3 {
+                // Classifier models follow the PaddleOCR BGR normalization path;
+                // the source image remains RGB everywhere else in the crate.
                 out[[c, y as usize, x as usize]] = (pixel[2 - c] as f32 / 255.0 - 0.5) / 0.5;
             }
         }
@@ -137,14 +124,14 @@ impl TextClassifier {
     }
 }
 
-pub struct ClassifyResult {
-    pub results: Vec<ClsResult>,
-    pub timings: OcrTimings,
+pub(crate) struct ClassifyResult {
+    pub(crate) results: Vec<ClsResult>,
+    pub(crate) timings: OcrTimings,
 }
 
-pub struct RotatedClassifyResult {
-    pub imgs: Vec<RgbImage>,
-    pub timings: OcrTimings,
+pub(crate) struct RotatedClassifyResult {
+    pub(crate) imgs: Vec<RgbImage>,
+    pub(crate) timings: OcrTimings,
 }
 
 fn elapsed_ms(start: Instant) -> f64 {

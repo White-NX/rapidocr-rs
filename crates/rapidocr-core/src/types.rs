@@ -1,25 +1,33 @@
+//! Public OCR output and timing data types.
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Four-point text box.
+///
+/// Points are stored as `[x, y]` pairs. Public OCR output uses image pixel
+/// coordinates after clipping to the source image bounds.
 pub struct Quad {
+    /// Box corners as four `[x, y]` points.
     pub points: [[f32; 2]; 4],
 }
 
 impl Quad {
+    /// Creates an axis-aligned quadrilateral from inclusive corner coordinates.
     pub fn from_xyxy(x0: f32, y0: f32, x1: f32, y1: f32) -> Self {
         Self {
             points: [[x0, y0], [x1, y0], [x1, y1], [x0, y1]],
         }
     }
 
-    pub fn scale(&mut self, ratio_w: f32, ratio_h: f32) {
+    pub(crate) fn scale(&mut self, ratio_w: f32, ratio_h: f32) {
         for point in &mut self.points {
             point[0] *= ratio_w;
             point[1] *= ratio_h;
         }
     }
 
-    pub fn clip(&mut self, width: u32, height: u32) {
+    pub(crate) fn clip(&mut self, width: u32, height: u32) {
         let max_x = width.saturating_sub(1) as f32;
         let max_y = height.saturating_sub(1) as f32;
         for point in &mut self.points {
@@ -28,7 +36,7 @@ impl Quad {
         }
     }
 
-    pub fn axis_aligned_bounds(&self) -> (u32, u32, u32, u32) {
+    pub(crate) fn axis_aligned_bounds(&self) -> (u32, u32, u32, u32) {
         let min_x = self
             .points
             .iter()
@@ -60,63 +68,40 @@ impl Quad {
         (min_x, min_y, max_x, max_y)
     }
 
-    pub fn ordered(mut self) -> Self {
+    pub(crate) fn ordered(mut self) -> Self {
         self.points = order_like_get_mini_boxes(self.points);
         self
     }
 
-    pub fn order_clockwise(mut self) -> Self {
-        self.points = order_points_clockwise(self.points);
-        self
-    }
-
-    pub fn order_clockwise_in_place(&mut self) {
+    pub(crate) fn order_clockwise_in_place(&mut self) {
         self.points = order_points_clockwise(self.points);
     }
 
-    pub fn ordered_in_place(&mut self) {
-        self.points = order_like_get_mini_boxes(self.points);
-    }
-
-    pub fn ordered_by_sum(mut self) -> Self {
-        let mut pts = self.points;
-        pts.sort_by(|a, b| (a[0] + a[1]).total_cmp(&(b[0] + b[1])));
-        let tl = pts[0];
-        let br = pts[3];
-        let (tr, bl) = if pts[1][0] > pts[2][0] {
-            (pts[1], pts[2])
-        } else {
-            (pts[2], pts[1])
-        };
-        self.points = [tl, tr, br, bl];
-        self
-    }
-
-    pub fn crop_width(&self) -> u32 {
+    pub(crate) fn crop_width(&self) -> u32 {
         self.width_f32().floor().max(1.0) as u32
     }
 
-    pub fn crop_height(&self) -> u32 {
+    pub(crate) fn crop_height(&self) -> u32 {
         self.height_f32().floor().max(1.0) as u32
     }
 
-    pub fn width_f32(&self) -> f32 {
+    pub(crate) fn width_f32(&self) -> f32 {
         let top = distance(self.points[0], self.points[1]);
         let bottom = distance(self.points[3], self.points[2]);
         top.max(bottom)
     }
 
-    pub fn height_f32(&self) -> f32 {
+    pub(crate) fn height_f32(&self) -> f32 {
         let left = distance(self.points[0], self.points[3]);
         let right = distance(self.points[1], self.points[2]);
         left.max(right)
     }
 
-    pub fn short_side(&self) -> f32 {
+    pub(crate) fn short_side(&self) -> f32 {
         self.width_f32().min(self.height_f32())
     }
 
-    pub fn contains_point(&self, x: f32, y: f32) -> bool {
+    pub(crate) fn contains_point(&self, x: f32, y: f32) -> bool {
         let mut inside = false;
         let points = &self.points;
         let mut j = points.len() - 1;
@@ -136,7 +121,7 @@ impl Quad {
     }
 }
 
-pub fn order_like_get_mini_boxes(mut points: [[f32; 2]; 4]) -> [[f32; 2]; 4] {
+fn order_like_get_mini_boxes(mut points: [[f32; 2]; 4]) -> [[f32; 2]; 4] {
     points.sort_by(|a, b| a[0].total_cmp(&b[0]));
 
     let (index_1, index_4) = if points[1][1] > points[0][1] {
@@ -158,7 +143,7 @@ pub fn order_like_get_mini_boxes(mut points: [[f32; 2]; 4]) -> [[f32; 2]; 4] {
     ]
 }
 
-pub fn order_points_clockwise(mut points: [[f32; 2]; 4]) -> [[f32; 2]; 4] {
+fn order_points_clockwise(mut points: [[f32; 2]; 4]) -> [[f32; 2]; 4] {
     points.sort_by(|a, b| a[0].total_cmp(&b[0]));
 
     let mut left_most = [points[0], points[1]];
@@ -176,42 +161,64 @@ fn distance(a: [f32; 2], b: [f32; 2]) -> f32 {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RecText {
+pub(crate) struct RecText {
     pub text: String,
     pub score: f32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// One OCR result line.
 pub struct OcrLine {
+    /// Detected or synthetic text box.
     pub bbox: Quad,
+    /// Recognized text. Detection-only output leaves this empty.
     pub text: String,
+    /// Mean recognition confidence. Detection-only output uses `0.0`.
     pub score: f32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// OCR output lines in reading order.
 pub struct OcrOutput {
+    /// Recognized lines.
     pub lines: Vec<OcrLine>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+/// Millisecond timings for OCR stages.
 pub struct OcrTimings {
+    /// Image decoding, EXIF orientation, and RGB conversion time.
     pub image_load_ms: f64,
+    /// High-level pipeline resize and padding time before detection.
     pub pipeline_preprocess_ms: f64,
+    /// Detection input resize and tensor normalization time.
     pub det_preprocess_ms: f64,
+    /// Detection ONNX inference time.
     pub det_inference_ms: f64,
+    /// Detection DB postprocessing time.
     pub det_postprocess_ms: f64,
+    /// Perspective crop generation time.
     pub crop_ms: f64,
+    /// Classification input resize and tensor normalization time.
     pub cls_preprocess_ms: f64,
+    /// Classification ONNX inference time.
     pub cls_inference_ms: f64,
+    /// Classification decode and rotation time.
     pub cls_postprocess_ms: f64,
+    /// Recognition input resize and tensor normalization time.
     pub rec_preprocess_ms: f64,
+    /// Recognition ONNX inference time.
     pub rec_inference_ms: f64,
+    /// Recognition CTC decode time.
     pub rec_decode_ms: f64,
+    /// Empty-text and low-score output filtering time.
     pub output_filter_ms: f64,
+    /// Total elapsed time for the requested run.
     pub total_ms: f64,
 }
 
 impl OcrTimings {
+    /// Adds another timing sample into this one field by field.
     pub fn add_assign(&mut self, other: &Self) {
         self.image_load_ms += other.image_load_ms;
         self.pipeline_preprocess_ms += other.pipeline_preprocess_ms;
@@ -229,6 +236,9 @@ impl OcrTimings {
         self.total_ms += other.total_ms;
     }
 
+    /// Divides every timing field by `denominator`.
+    ///
+    /// A zero denominator returns the input unchanged.
     pub fn div_by(self, denominator: f64) -> Self {
         if denominator == 0.0 {
             return self;
@@ -254,8 +264,11 @@ impl OcrTimings {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// OCR output paired with per-stage timings.
 pub struct TimedOcrOutput {
+    /// Recognized OCR lines.
     pub output: OcrOutput,
+    /// Timing breakdown in milliseconds.
     pub timings: OcrTimings,
 }
 

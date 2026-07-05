@@ -4,12 +4,12 @@ use anyhow::{anyhow, bail, Context, Result};
 use ndarray::{Array4, ArrayD};
 use ort::{session::builder::GraphOptimizationLevel, session::Session, value::TensorRef};
 
-pub struct OnnxSession {
+pub(crate) struct OnnxSession {
     session: Session,
 }
 
 impl OnnxSession {
-    pub fn new(model_path: impl AsRef<Path>) -> Result<Self> {
+    pub(crate) fn new(model_path: impl AsRef<Path>) -> Result<Self> {
         let model_path = model_path.as_ref();
         if !model_path.exists() {
             bail!(
@@ -30,7 +30,7 @@ impl OnnxSession {
         Ok(Self { session })
     }
 
-    pub fn run_f32(&mut self, input: &Array4<f32>) -> Result<ArrayD<f32>> {
+    pub(crate) fn run_f32(&mut self, input: &Array4<f32>) -> Result<ArrayD<f32>> {
         let outputs = self
             .session
             .run(ort::inputs![TensorRef::from_array_view(input)?])

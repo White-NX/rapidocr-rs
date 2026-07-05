@@ -1,3 +1,9 @@
+//! Registered model sets and local model-cache helpers.
+//!
+//! Model assets are not bundled with the crate. [`ModelCache`] can download
+//! registered assets on demand or verify that an application-provided cache is
+//! complete for the selected [`PipelineConfig`].
+
 use std::{
     fs,
     io::Write,
@@ -9,136 +15,176 @@ use sha2::{Digest, Sha256};
 
 use crate::config::{ClsConfig, DetConfig, LimitType, PipelineConfig, RapidOcrConfig, RecConfig};
 
-pub const PPOCRV6_DET_SMALL_URL: &str =
+const PPOCRV6_DET_SMALL_URL: &str =
     "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.0/onnx/PP-OCRv6/det/PP-OCRv6_det_small.onnx";
-pub const PPOCRV6_DET_SMALL_SHA256: &str =
+const PPOCRV6_DET_SMALL_SHA256: &str =
     "090f04abcd9d9a7498bc4ebf677e4cb9bdce1fe4197ddb7e529f1ef44e1ff94f";
-pub const PPOCRV6_REC_SMALL_URL: &str =
+const PPOCRV6_REC_SMALL_URL: &str =
     "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.0/onnx/PP-OCRv6/rec/PP-OCRv6_rec_small.onnx";
-pub const PPOCRV6_REC_SMALL_SHA256: &str =
+const PPOCRV6_REC_SMALL_SHA256: &str =
     "6f327246b50388f3c176ae304bd95767ea6dc0c9ae92153ef8cbe210b3c14884";
-pub const PPOCRV6_DET_TINY_URL: &str =
+const PPOCRV6_DET_TINY_URL: &str =
     "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.0/onnx/PP-OCRv6/det/PP-OCRv6_det_tiny.onnx";
-pub const PPOCRV6_DET_TINY_SHA256: &str =
+const PPOCRV6_DET_TINY_SHA256: &str =
     "f42c0fbd294d95eac1a550e131b277dac97462c8025fa4b6c3cec1b7894bd3d5";
-pub const PPOCRV6_REC_TINY_URL: &str =
+const PPOCRV6_REC_TINY_URL: &str =
     "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.0/onnx/PP-OCRv6/rec/PP-OCRv6_rec_tiny.onnx";
-pub const PPOCRV6_REC_TINY_SHA256: &str =
+const PPOCRV6_REC_TINY_SHA256: &str =
     "e16e242de5937ad92609223f19bc2aff3727ee40b095f996907c24749bad251b";
-pub const PPOCRV6_DET_MEDIUM_URL: &str =
+const PPOCRV6_DET_MEDIUM_URL: &str =
     "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.0/onnx/PP-OCRv6/det/PP-OCRv6_det_medium.onnx";
-pub const PPOCRV6_DET_MEDIUM_SHA256: &str =
+const PPOCRV6_DET_MEDIUM_SHA256: &str =
     "92078b7355007ccfffcd4c8cd441a3afd4538904d06881b29a155e1e679907c2";
-pub const PPOCRV6_REC_MEDIUM_URL: &str =
+const PPOCRV6_REC_MEDIUM_URL: &str =
     "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.0/onnx/PP-OCRv6/rec/PP-OCRv6_rec_medium.onnx";
-pub const PPOCRV6_REC_MEDIUM_SHA256: &str =
+const PPOCRV6_REC_MEDIUM_SHA256: &str =
     "eef444829dbbe18d7fea59a3f6eb75647518d2b3a9568d27c92e42940204894b";
-pub const PPOCRV4_CLS_URL: &str =
+const PPOCRV4_CLS_URL: &str =
     "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.0/onnx/PP-OCRv4/cls/ch_ppocr_mobile_v2.0_cls_mobile.onnx";
-pub const PPOCRV4_CLS_SHA256: &str =
-    "e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c";
-pub const PPOCRV6_DICT_URL: &str =
+const PPOCRV4_CLS_SHA256: &str = "e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c";
+const PPOCRV6_DICT_URL: &str =
     "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/master/paddle/PP-OCRv6/rec/PP-OCRv6_rec_small/ppocrv6_dict.txt";
-pub const PPOCRV6_TINY_DICT_URL: &str =
+const PPOCRV6_TINY_DICT_URL: &str =
     "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/master/paddle/PP-OCRv6/rec/PP-OCRv6_rec_tiny/ppocrv6_tiny_dict.txt";
-pub const PPOCRV4_EN_DET_MOBILE_URL: &str =
+const PPOCRV4_EN_DET_MOBILE_URL: &str =
     "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.0/onnx/PP-OCRv4/det/en_PP-OCRv3_det_mobile.onnx";
-pub const PPOCRV4_EN_DET_MOBILE_SHA256: &str =
+const PPOCRV4_EN_DET_MOBILE_SHA256: &str =
     "ea07c15d38ac40cd69da3c493444ec75b44ff23840553ff8ba102c1219ed39c2";
-pub const PPOCRV4_EN_REC_MOBILE_URL: &str =
+const PPOCRV4_EN_REC_MOBILE_URL: &str =
     "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.0/onnx/PP-OCRv4/rec/en_PP-OCRv4_rec_mobile.onnx";
-pub const PPOCRV4_EN_REC_MOBILE_SHA256: &str =
+const PPOCRV4_EN_REC_MOBILE_SHA256: &str =
     "e8770c967605983d1570cdf5352041dfb68fa0c21664f49f47b155abd3e0e318";
-pub const PPOCRV4_EN_DICT_URL: &str =
+const PPOCRV4_EN_DICT_URL: &str =
     "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.0/paddle/PP-OCRv4/rec/en_PP-OCRv4_rec_mobile/en_dict.txt";
-pub const PPOCRV5_CH_DET_MOBILE_URL: &str =
+const PPOCRV5_CH_DET_MOBILE_URL: &str =
     "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.0/onnx/PP-OCRv5/det/ch_PP-OCRv5_det_mobile.onnx";
-pub const PPOCRV5_CH_DET_MOBILE_SHA256: &str =
+const PPOCRV5_CH_DET_MOBILE_SHA256: &str =
     "4d97c44a20d30a81aad087d6a396b08f786c4635742afc391f6621f5c6ae78ae";
-pub const PPOCRV5_CH_DET_SERVER_URL: &str =
+const PPOCRV5_CH_DET_SERVER_URL: &str =
     "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.0/onnx/PP-OCRv5/det/ch_PP-OCRv5_det_server.onnx";
-pub const PPOCRV5_CH_DET_SERVER_SHA256: &str =
+const PPOCRV5_CH_DET_SERVER_SHA256: &str =
     "0f8846b1d4bba223a2a2f9d9b44022fbc22cc019051a602b41a7fda9667e4cad";
-pub const PPOCRV5_CH_REC_SERVER_URL: &str =
+const PPOCRV5_CH_REC_SERVER_URL: &str =
     "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.0/onnx/PP-OCRv5/rec/ch_PP-OCRv5_rec_server.onnx";
-pub const PPOCRV5_CH_REC_SERVER_SHA256: &str =
+const PPOCRV5_CH_REC_SERVER_SHA256: &str =
     "e09385400eaaaef34ceff54aeb7c4f0f1fe014c27fa8b9905d4709b65746562a";
-pub const PPOCRV5_EN_REC_MOBILE_URL: &str =
+const PPOCRV5_EN_REC_MOBILE_URL: &str =
     "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.0/onnx/PP-OCRv5/rec/en_PP-OCRv5_rec_mobile.onnx";
-pub const PPOCRV5_EN_REC_MOBILE_SHA256: &str =
+const PPOCRV5_EN_REC_MOBILE_SHA256: &str =
     "c3461add59bb4323ecba96a492ab75e06dda42467c9e3d0c18db5d1d21924be8";
-pub const PPOCRV5_CLS_MOBILE_URL: &str =
+const PPOCRV5_CLS_MOBILE_URL: &str =
     "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.0/onnx/PP-OCRv5/cls/ch_PP-LCNet_x0_25_textline_ori_cls_mobile.onnx";
-pub const PPOCRV5_CLS_MOBILE_SHA256: &str =
+const PPOCRV5_CLS_MOBILE_SHA256: &str =
     "54379ae5174d026780215fc748a7f31910dee36818e63d49e17dc598ecc82df7";
-pub const PPOCRV5_CLS_SERVER_URL: &str =
+const PPOCRV5_CLS_SERVER_URL: &str =
     "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.0/onnx/PP-OCRv5/cls/ch_PP-LCNet_x1_0_textline_ori_cls_server.onnx";
-pub const PPOCRV5_CLS_SERVER_SHA256: &str =
+const PPOCRV5_CLS_SERVER_SHA256: &str =
     "7d3c02ef6c7da8ae08b4347cc7695b2081aae68c325d64375724ecf39c99e743";
-pub const PPOCRV5_DICT_URL: &str =
+const PPOCRV5_DICT_URL: &str =
     "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.0/paddle/PP-OCRv5/rec/ch_PP-OCRv5_rec_server/ppocrv5_dict.txt";
-pub const PPOCRV5_EN_DICT_URL: &str =
+const PPOCRV5_EN_DICT_URL: &str =
     "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.0/paddle/PP-OCRv5/rec/en_PP-OCRv5_rec_mobile/ppocrv5_en_dict.txt";
+/// Default registered model-set name used by the CLI and examples.
 pub const DEFAULT_MODEL_SET_NAME: &str = "ppocrv6-small";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Kind of model asset in a registered model set.
 pub enum ModelAssetKind {
+    /// Text detection ONNX model.
     Detection,
+    /// Text-line orientation classifier ONNX model.
     Classification,
+    /// Text recognition ONNX model.
     Recognition,
+    /// Recognition dictionary text file.
     Dictionary,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Downloadable or cacheable model asset.
 pub struct ModelAssetSpec {
+    /// Human-readable asset name used in errors.
     pub name: &'static str,
+    /// Stage or file kind.
     pub kind: ModelAssetKind,
+    /// Filename expected inside a [`ModelCache`] root.
     pub filename: &'static str,
+    /// Download URL.
     pub url: &'static str,
+    /// Optional SHA-256 checksum used after download and when reusing cached files.
     pub sha256: Option<&'static str>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// Complete detection-classification-recognition model set.
 pub struct ModelSetSpec {
+    /// Stable model-set identifier.
     pub name: &'static str,
+    /// Model family label, such as `PP-OCRv6`.
     pub family: &'static str,
+    /// Detection model and parameters.
     pub det: DetModelSpec,
+    /// Classification model and parameters.
     pub cls: ClsModelSpec,
+    /// Recognition model, dictionary, and parameters.
     pub rec: RecModelSpec,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// Detection model parameters for a registered model set.
 pub struct DetModelSpec {
+    /// Detection ONNX asset.
     pub asset: ModelAssetSpec,
+    /// Detector resize side limit.
     pub limit_side_len: u32,
+    /// Detector resize limit mode.
     pub limit_type: LimitType,
+    /// Input normalization mean in RGB order.
     pub mean: [f32; 3],
+    /// Input normalization standard deviation in RGB order.
     pub std: [f32; 3],
+    /// DB mask threshold.
     pub thresh: f32,
+    /// DB candidate score threshold.
     pub box_thresh: f32,
+    /// Maximum number of detection candidates.
     pub max_candidates: usize,
+    /// Polygon expansion ratio for DB boxes.
     pub unclip_ratio: f32,
+    /// Minimum candidate size in detector-map pixels.
     pub min_size: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// Text-line orientation classifier parameters for a registered model set.
 pub struct ClsModelSpec {
+    /// Classification ONNX asset.
     pub asset: ModelAssetSpec,
+    /// Input tensor shape as `[channels, height, width]`.
     pub image_shape: [usize; 3],
+    /// Maximum crops per inference call.
     pub batch_size: usize,
+    /// Minimum score required before a `180` label rotates the crop.
     pub thresh: f32,
+    /// Output labels in model order.
     pub labels: &'static [&'static str],
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// Recognition model parameters for a registered model set.
 pub struct RecModelSpec {
+    /// Recognition ONNX asset.
     pub asset: ModelAssetSpec,
+    /// Recognition dictionary asset.
     pub dict: ModelAssetSpec,
+    /// Input tensor shape as `[channels, height, width]`.
     pub image_shape: [usize; 3],
+    /// Maximum crops per inference call.
     pub batch_size: usize,
 }
 
 impl ModelSetSpec {
+    /// Returns all assets in the model set.
     pub fn assets(&self) -> [ModelAssetSpec; 4] {
         [
             self.det.asset,
@@ -148,6 +194,7 @@ impl ModelSetSpec {
         ]
     }
 
+    /// Returns only the assets required by the selected pipeline stages.
     pub fn assets_for_pipeline(&self, pipeline: PipelineConfig) -> Vec<ModelAssetSpec> {
         let mut assets = Vec::new();
         if pipeline.use_det {
@@ -163,6 +210,7 @@ impl ModelSetSpec {
         assets
     }
 
+    /// Builds a [`RapidOcrConfig`] with model paths rooted at `model_dir`.
     pub fn config(&self, model_dir: impl Into<PathBuf>) -> RapidOcrConfig {
         let model_dir = model_dir.into();
         RapidOcrConfig {
@@ -419,6 +467,7 @@ const fn rec_with_assets(asset: ModelAssetSpec, dict: ModelAssetSpec) -> RecMode
     }
 }
 
+/// Registered PP-OCRv6 tiny model set.
 pub const PPOCRV6_TINY: ModelSetSpec = ModelSetSpec {
     name: "ppocrv6-tiny",
     family: "PP-OCRv6",
@@ -427,6 +476,7 @@ pub const PPOCRV6_TINY: ModelSetSpec = ModelSetSpec {
     rec: rec_with_assets(PPOCRV6_REC_TINY, PPOCRV6_TINY_DICT),
 };
 
+/// Registered PP-OCRv6 small model set.
 pub const PPOCRV6_SMALL: ModelSetSpec = ModelSetSpec {
     name: "ppocrv6-small",
     family: "PP-OCRv6",
@@ -435,6 +485,7 @@ pub const PPOCRV6_SMALL: ModelSetSpec = ModelSetSpec {
     rec: rec_with_assets(PPOCRV6_REC_SMALL, PPOCRV6_DICT),
 };
 
+/// Registered PP-OCRv6 medium model set.
 pub const PPOCRV6_MEDIUM: ModelSetSpec = ModelSetSpec {
     name: "ppocrv6-medium",
     family: "PP-OCRv6",
@@ -443,6 +494,7 @@ pub const PPOCRV6_MEDIUM: ModelSetSpec = ModelSetSpec {
     rec: rec_with_assets(PPOCRV6_REC_MEDIUM, PPOCRV6_DICT),
 };
 
+/// Registered PP-OCRv4 English mobile model set.
 pub const PPOCRV4_EN_MOBILE: ModelSetSpec = ModelSetSpec {
     name: "ppocrv4-en-mobile",
     family: "PP-OCRv4",
@@ -451,6 +503,7 @@ pub const PPOCRV4_EN_MOBILE: ModelSetSpec = ModelSetSpec {
     rec: rec_with_assets(PPOCRV4_EN_REC_MOBILE, PPOCRV4_EN_DICT),
 };
 
+/// Registered PP-OCRv5 English mobile model set.
 pub const PPOCRV5_EN_MOBILE: ModelSetSpec = ModelSetSpec {
     name: "ppocrv5-en-mobile",
     family: "PP-OCRv5",
@@ -459,6 +512,7 @@ pub const PPOCRV5_EN_MOBILE: ModelSetSpec = ModelSetSpec {
     rec: rec_with_assets(PPOCRV5_EN_REC_MOBILE, PPOCRV5_EN_DICT),
 };
 
+/// Registered PP-OCRv5 Chinese server model set.
 pub const PPOCRV5_CH_SERVER: ModelSetSpec = ModelSetSpec {
     name: "ppocrv5-ch-server",
     family: "PP-OCRv5",
@@ -476,10 +530,12 @@ static MODEL_SETS: [ModelSetSpec; 6] = [
     PPOCRV5_CH_SERVER,
 ];
 
+/// Returns registered model sets in CLI display order.
 pub fn available_model_sets() -> &'static [ModelSetSpec] {
     &MODEL_SETS
 }
 
+/// Returns registered model-set names in CLI display order.
 pub fn available_model_set_names() -> Vec<&'static str> {
     available_model_sets()
         .iter()
@@ -487,6 +543,7 @@ pub fn available_model_set_names() -> Vec<&'static str> {
         .collect()
 }
 
+/// Finds a registered model set by name, ignoring ASCII case.
 pub fn model_set_by_name(name: &str) -> Option<&'static ModelSetSpec> {
     available_model_sets()
         .iter()
@@ -494,33 +551,42 @@ pub fn model_set_by_name(name: &str) -> Option<&'static ModelSetSpec> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Model-cache preparation mode.
 pub enum ModelDownloadMode {
+    /// Download any missing asset.
     Missing,
+    /// Never download; return an error if any required asset is missing.
     Never,
 }
 
 #[derive(Debug, Clone)]
+/// Local directory containing model assets.
 pub struct ModelCache {
     root: PathBuf,
 }
 
 impl ModelCache {
+    /// Creates a model cache rooted at `root`.
     pub fn new(root: impl Into<PathBuf>) -> Self {
         Self { root: root.into() }
     }
 
+    /// Returns the model cache root directory.
     pub fn root(&self) -> &Path {
         &self.root
     }
 
+    /// Returns the expected local path for an asset.
     pub fn asset_path(&self, asset: ModelAssetSpec) -> PathBuf {
         self.root.join(asset.filename)
     }
 
+    /// Builds a pipeline configuration for `model_set` using this cache root.
     pub fn config_for(&self, model_set: &ModelSetSpec) -> RapidOcrConfig {
         model_set.config(&self.root)
     }
 
+    /// Lists all missing assets for a complete model set.
     pub fn missing_assets(&self, model_set: &ModelSetSpec) -> Vec<ModelAssetSpec> {
         model_set
             .assets()
@@ -529,6 +595,7 @@ impl ModelCache {
             .collect()
     }
 
+    /// Lists missing assets required by the selected pipeline stages.
     pub fn missing_assets_for_pipeline(
         &self,
         model_set: &ModelSetSpec,
@@ -541,6 +608,7 @@ impl ModelCache {
             .collect()
     }
 
+    /// Ensures all assets for a complete model set exist and pass checksum validation.
     pub fn ensure_model_set(
         &self,
         model_set: &ModelSetSpec,
@@ -549,6 +617,7 @@ impl ModelCache {
         self.ensure_assets(model_set.assets(), mode)
     }
 
+    /// Ensures assets needed by selected pipeline stages exist and pass checksum validation.
     pub fn ensure_model_set_for_pipeline(
         &self,
         model_set: &ModelSetSpec,
@@ -558,6 +627,7 @@ impl ModelCache {
         self.ensure_assets(model_set.assets_for_pipeline(pipeline), mode)
     }
 
+    /// Ensures the default `ppocrv6-small` model set exists in the cache.
     pub fn ensure_ppocrv6_small(&self, mode: ModelDownloadMode) -> Result<()> {
         self.ensure_model_set(&PPOCRV6_SMALL, mode)
     }
@@ -598,6 +668,7 @@ impl ModelCache {
     }
 }
 
+/// Ensures default `ppocrv6-small` models exist and returns the cache path.
 pub fn ensure_ppocrv6_small_models(model_dir: impl AsRef<Path>) -> Result<PathBuf> {
     let cache = ModelCache::new(model_dir.as_ref());
     cache.ensure_ppocrv6_small(ModelDownloadMode::Missing)?;

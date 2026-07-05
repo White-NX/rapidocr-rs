@@ -13,12 +13,12 @@ const SCORE_THRESHOLD_EPSILON: f32 = 0.005;
 const MICRO_BOX_MAX_SIDE_PX: u32 = 4;
 
 #[derive(Debug, Clone)]
-pub struct DbPostProcessConfig {
-    pub thresh: f32,
-    pub box_thresh: f32,
-    pub max_candidates: usize,
-    pub unclip_ratio: f32,
-    pub min_size: u32,
+pub(crate) struct DbPostProcessConfig {
+    pub(crate) thresh: f32,
+    pub(crate) box_thresh: f32,
+    pub(crate) max_candidates: usize,
+    pub(crate) unclip_ratio: f32,
+    pub(crate) min_size: u32,
 }
 
 impl From<&DetConfig> for DbPostProcessConfig {
@@ -34,21 +34,22 @@ impl From<&DetConfig> for DbPostProcessConfig {
 }
 
 #[derive(Debug, Clone)]
-pub struct DetCandidate {
-    pub bbox: Quad,
-    pub score: f32,
+pub(crate) struct DetCandidate {
+    pub(crate) bbox: Quad,
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) score: f32,
 }
 
-pub struct DbPostProcess {
+pub(crate) struct DbPostProcess {
     cfg: DbPostProcessConfig,
 }
 
 impl DbPostProcess {
-    pub fn new(cfg: DbPostProcessConfig) -> Self {
+    pub(crate) fn new(cfg: DbPostProcessConfig) -> Self {
         Self { cfg }
     }
 
-    pub fn process(
+    pub(crate) fn process(
         &self,
         pred: ArrayD<f32>,
         dest_w: u32,
@@ -57,6 +58,9 @@ impl DbPostProcess {
         let pred = pred.into_dimensionality::<Ix4>()?;
         let map_h = pred.shape()[2];
         let map_w = pred.shape()[3];
+        // Python RapidOCR dilates the threshold mask before contour extraction.
+        // This Rust path uses connected components plus boundary sampling instead
+        // of OpenCV contours, but keeps the same mask-level intent.
         let mask = dilate_2x2(&pred, self.cfg.thresh, map_w, map_h);
         let mut visited = vec![false; map_h * map_w];
         let mut boxes = Vec::new();
@@ -75,6 +79,8 @@ impl DbPostProcess {
                     continue;
                 }
 
+                // Score once on the raw component rectangle, then expand and
+                // re-fit a min-area rectangle to approximate DBPostProcess.
                 let Some(base_box) = component.to_quad(&mask, map_w, map_h, 0.0) else {
                     continue;
                 };
@@ -200,6 +206,9 @@ impl Component {
         height: usize,
         unclip_ratio: f32,
     ) -> Option<Quad> {
+        // OpenCV contour extraction is replaced with boundary-pixel corner
+        // samples. Each boundary cell contributes its four cell corners, then
+        // min_area_rect recovers the oriented candidate box.
         let mut boundary = Vec::new();
         for &(x, y) in &self.pixels {
             if !is_boundary(mask, x, y, width, height) {
@@ -239,6 +248,8 @@ fn collect_component(
     width: usize,
     height: usize,
 ) -> Component {
+    // Use 8-connected components because text probability maps often connect
+    // diagonally at thin strokes.
     let mut queue = VecDeque::from([(start_x, start_y)]);
     let mut c = Component::new(start_x, start_y);
 
@@ -339,6 +350,8 @@ fn polygon_score_fast(pred: &ndarray::ArrayBase<ndarray::OwnedRepr<f32>, Ix4>, b
         return 0.0;
     }
 
+    // The Python implementation rasterizes the polygon mask and averages scores
+    // under it. Scanline spans give the same intent without allocating a local mask.
     let local_poly = bbox
         .points
         .map(|point| [point[0] - x0 as f32, point[1] - y0 as f32]);
@@ -377,6 +390,9 @@ fn polygon_scanline_spans(
     scan_y: f32,
     width: usize,
 ) -> Vec<(usize, usize)> {
+    // Rasterize by intersecting one horizontal scanline with polygon edges.
+    // Paired intersections define inclusive x spans; ceil/floor mirrors the
+    // integer pixels whose centers fall inside the polygon.
     let mut intersections = Vec::with_capacity(4);
     for i in 0..polygon.len() {
         let p0 = polygon[i];

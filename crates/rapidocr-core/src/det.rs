@@ -10,14 +10,14 @@ use crate::{
     types::{OcrTimings, Quad},
 };
 
-pub struct TextDetector {
+pub(crate) struct TextDetector {
     cfg: DetConfig,
     session: OnnxSession,
     postprocess: DbPostProcess,
 }
 
 impl TextDetector {
-    pub fn new(cfg: DetConfig) -> Result<Self> {
+    pub(crate) fn new(cfg: DetConfig) -> Result<Self> {
         cfg.validate().context("invalid detection config")?;
         let session = OnnxSession::new(&cfg.model_path).with_context(|| {
             format!(
@@ -33,14 +33,13 @@ impl TextDetector {
         })
     }
 
-    pub fn detect(&mut self, img: &image::RgbImage) -> Result<Vec<Quad>> {
-        Ok(self.detect_timed(img)?.boxes)
-    }
-
-    pub fn detect_timed(&mut self, img: &image::RgbImage) -> Result<DetectResult> {
+    pub(crate) fn detect_timed(&mut self, img: &image::RgbImage) -> Result<DetectResult> {
         let mut timings = OcrTimings::default();
 
         let start = Instant::now();
+        // The detector expects dimensions divisible by 32 and normalized NCHW
+        // input. Box coordinates are mapped back by postprocess using the
+        // original image size passed below.
         let input_img = resize_to_multiple_for_det(
             img,
             self.cfg.limit_side_len,
@@ -66,9 +65,9 @@ impl TextDetector {
     }
 }
 
-pub struct DetectResult {
-    pub boxes: Vec<Quad>,
-    pub timings: OcrTimings,
+pub(crate) struct DetectResult {
+    pub(crate) boxes: Vec<Quad>,
+    pub(crate) timings: OcrTimings,
 }
 
 fn elapsed_ms(start: Instant) -> f64 {

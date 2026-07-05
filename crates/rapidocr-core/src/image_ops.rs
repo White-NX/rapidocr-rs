@@ -10,7 +10,7 @@ use ndarray::Array4;
 
 use crate::types::Quad;
 
-pub fn load_rgb_image(path: impl AsRef<Path>) -> Result<RgbImage> {
+pub(crate) fn load_rgb_image(path: impl AsRef<Path>) -> Result<RgbImage> {
     let path = path.as_ref();
     if !path.exists() {
         bail!("image file not found at {}", path.display());
@@ -38,6 +38,9 @@ fn to_rgb_with_alpha_background(image: &DynamicImage) -> RgbImage {
 }
 
 fn composite_alpha_to_contrast_background(image: &RgbaImage) -> RgbImage {
+    // Transparent OCR inputs often contain either dark text or light text with no
+    // explicit background. Choose the opposite background by foreground luminance
+    // so text remains visible after alpha is flattened to RGB.
     let mut luminance_sum = 0.0f32;
     let mut non_transparent_count = 0usize;
     for pixel in image.pixels() {
@@ -72,7 +75,7 @@ fn composite_alpha_to_contrast_background(image: &RgbaImage) -> RgbImage {
     out
 }
 
-pub fn resize_image_within_bounds(
+pub(crate) fn resize_image_within_bounds(
     img: &RgbImage,
     min_side_len: u32,
     max_side_len: u32,
@@ -82,6 +85,8 @@ pub fn resize_image_within_bounds(
     let original_h = h;
     let mut current = img.clone();
 
+    // The outer pipeline keeps dimensions aligned to 32 so later detector
+    // preprocessing does not introduce a second large geometry shift.
     if w.max(h) > max_side_len {
         let ratio = max_side_len as f32 / w.max(h) as f32;
         w = round_to_multiple((w as f32 * ratio) as u32, 32).max(32);
@@ -108,7 +113,7 @@ pub fn resize_image_within_bounds(
     ))
 }
 
-pub fn apply_vertical_padding(
+pub(crate) fn apply_vertical_padding(
     img: &RgbImage,
     width_height_ratio: f32,
     min_height: u32,
@@ -124,6 +129,9 @@ pub fn apply_vertical_padding(
         bail!("width_height_ratio must be positive or -1");
     }
 
+    // RapidOCR pads very short or very wide images before detection to avoid
+    // detector misses on thin text lines. The caller subtracts this top padding
+    // before mapping boxes back to original image coordinates.
     let base_h = if width_height_ratio == -1.0 {
         min_height
     } else {
@@ -136,7 +144,7 @@ pub fn apply_vertical_padding(
     Ok((out, padding_h))
 }
 
-pub fn resize_to_multiple_for_det(
+pub(crate) fn resize_to_multiple_for_det(
     img: &RgbImage,
     limit_side_len: u32,
     limit_min_side: bool,
@@ -164,7 +172,7 @@ pub fn resize_to_multiple_for_det(
     ))
 }
 
-pub fn rgb_to_nchw(img: &RgbImage, mean: [f32; 3], std: [f32; 3]) -> Array4<f32> {
+pub(crate) fn rgb_to_nchw(img: &RgbImage, mean: [f32; 3], std: [f32; 3]) -> Array4<f32> {
     let (w, h) = img.dimensions();
     let mut array = Array4::<f32>::zeros((1, 3, h as usize, w as usize));
     for (x, y, pixel) in img.enumerate_pixels() {
@@ -175,7 +183,7 @@ pub fn rgb_to_nchw(img: &RgbImage, mean: [f32; 3], std: [f32; 3]) -> Array4<f32>
     array
 }
 
-pub fn crop_axis_aligned(img: &RgbImage, bbox: &Quad) -> Result<RgbImage> {
+pub(crate) fn crop_axis_aligned(img: &RgbImage, bbox: &Quad) -> Result<RgbImage> {
     let (mut x0, mut y0, mut x1, mut y1) = bbox.axis_aligned_bounds();
     let (w, h) = img.dimensions();
     x0 = x0.min(w.saturating_sub(1));
@@ -188,9 +196,11 @@ pub fn crop_axis_aligned(img: &RgbImage, bbox: &Quad) -> Result<RgbImage> {
     Ok(imageops::crop_imm(img, x0, y0, x1 - x0, y1 - y0).to_image())
 }
 
-pub fn crop_perspective(img: &RgbImage, bbox: &Quad) -> Result<RgbImage> {
+pub(crate) fn crop_perspective(img: &RgbImage, bbox: &Quad) -> Result<RgbImage> {
     let mut bbox = bbox.clone().ordered();
     const REPLICATE_PAD: u32 = 2;
+    // OpenCV perspective warps near image edges sample replicated border pixels.
+    // Add a small replicated border to match that behavior for tiny edge text.
     if is_near_image_edge(&bbox, img.width(), img.height(), REPLICATE_PAD) {
         let padded = replicate_border(img, REPLICATE_PAD);
         for point in &mut bbox.points {
@@ -236,6 +246,8 @@ fn crop_perspective_ordered(img: &RgbImage, bbox: &Quad) -> Result<RgbImage> {
         &mut out,
     );
 
+    // RapidOCR rotates tall text crops before recognition so recognizer input is
+    // predominantly horizontal.
     if out.height() as f32 / out.width().max(1) as f32 >= 1.5 {
         Ok(imageops::rotate270(&out))
     } else {
@@ -265,7 +277,7 @@ fn replicate_border(img: &RgbImage, pad: u32) -> RgbImage {
     out
 }
 
-pub fn round_to_multiple(value: u32, divisor: u32) -> u32 {
+pub(crate) fn round_to_multiple(value: u32, divisor: u32) -> u32 {
     ((value + divisor / 2) / divisor) * divisor
 }
 
