@@ -18,6 +18,9 @@ pub struct RapidOcrConfig {
     /// Stage switches controlling detection, direction classification, and recognition.
     #[serde(default)]
     pub pipeline: PipelineConfig,
+    /// ONNX Runtime session resource limits shared by all enabled stages.
+    #[serde(default)]
+    pub inference: InferenceOptions,
     /// Minimum accepted recognition confidence for detected text lines.
     pub text_score: f32,
     /// Minimum image side length used by the high-level pipeline resize step.
@@ -97,6 +100,7 @@ impl RapidOcrConfig {
     /// Validates field ranges and enabled-stage requirements.
     pub fn validate(&self) -> Result<()> {
         self.pipeline.validate()?;
+        self.inference.validate()?;
         ensure_unit_interval(self.text_score, "text_score")?;
         ensure!(self.min_side_len > 0, "min_side_len must be greater than 0");
         ensure!(self.max_side_len > 0, "max_side_len must be greater than 0");
@@ -137,6 +141,80 @@ impl RapidOcrConfig {
         self.pipeline = pipeline;
         self
     }
+
+    /// Returns a copy of this configuration with replacement ONNX Runtime options.
+    pub fn with_inference_options(mut self, inference: InferenceOptions) -> Self {
+        self.inference = inference;
+        self
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+/// ONNX Runtime session resource configuration shared by all enabled stages.
+pub struct InferenceOptions {
+    /// Number of threads used to parallelize execution within an operator.
+    pub intra_threads: usize,
+    /// Number of threads used to parallelize graph execution when enabled.
+    pub inter_threads: usize,
+    /// Enables parallel graph execution, which can increase memory usage.
+    pub parallel_execution: bool,
+    /// Execution provider used by each ONNX Runtime session.
+    #[serde(default)]
+    pub execution_provider: ExecutionProvider,
+}
+
+impl InferenceOptions {
+    /// Validates ONNX Runtime thread limits.
+    pub fn validate(&self) -> Result<()> {
+        ensure!(
+            (1..=i32::MAX as usize).contains(&self.intra_threads),
+            "inference.intra_threads must be between 1 and {}",
+            i32::MAX
+        );
+        ensure!(
+            (1..=i32::MAX as usize).contains(&self.inter_threads),
+            "inference.inter_threads must be between 1 and {}",
+            i32::MAX
+        );
+        if self.execution_provider == ExecutionProvider::DirectMl {
+            ensure!(
+                cfg!(feature = "directml"),
+                "inference.execution_provider = \"direct-ml\" requires the `directml` Cargo feature"
+            );
+            ensure!(
+                cfg!(target_os = "windows"),
+                "the DirectML execution provider is only available on Windows"
+            );
+            ensure!(
+                !self.parallel_execution,
+                "inference.parallel_execution must be false when using DirectML"
+            );
+        }
+        Ok(())
+    }
+}
+
+impl Default for InferenceOptions {
+    fn default() -> Self {
+        Self {
+            intra_threads: 1,
+            inter_threads: 1,
+            parallel_execution: false,
+            execution_provider: ExecutionProvider::Cpu,
+        }
+    }
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+/// ONNX Runtime execution provider selection.
+pub enum ExecutionProvider {
+    /// Use the default CPU execution provider.
+    #[default]
+    Cpu,
+    /// Use DirectML on Windows. Requires the `directml` Cargo feature.
+    DirectMl,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -374,6 +452,7 @@ mod tests {
         let _ = fs::remove_file(&path);
 
         assert_eq!(loaded.pipeline, PipelineConfig::full());
+        assert_eq!(loaded.inference, InferenceOptions::default());
         assert_eq!(loaded.min_height, 30);
         assert_eq!(loaded.width_height_ratio, 8.0);
         let det = loaded.det.as_ref().unwrap();
@@ -438,5 +517,86 @@ mod tests {
         let err = cfg.validate().unwrap_err().to_string();
 
         assert!(err.contains("pipeline.use_rec is true but [rec] config is missing"));
+    }
+
+    #[test]
+    fn config_without_inference_section_uses_resource_limited_defaults() {
+        let content = RapidOcrConfig::ppocr_v6_small("models")
+            .to_toml_string()
+            .unwrap();
+        let content = content.replace(
+            "[inference]\nintra_threads = 1\ninter_threads = 1\nparallel_execution = false\nexecution_provider = \"cpu\"\n\n",
+            "",
+        );
+
+        let loaded = RapidOcrConfig::from_toml_str(&content).unwrap();
+
+        assert_eq!(loaded.inference, InferenceOptions::default());
+    }
+
+    #[test]
+    fn config_validation_rejects_zero_inference_threads() {
+        let mut cfg = RapidOcrConfig::ppocr_v6_small("models");
+        cfg.inference.intra_threads = 0;
+
+        let err = cfg.validate().unwrap_err().to_string();
+
+        assert!(err.contains("inference.intra_threads must be between 1 and"));
+    }
+
+    #[test]
+    fn config_validation_rejects_inference_threads_above_ffi_range() {
+        let mut cfg = RapidOcrConfig::ppocr_v6_small("models");
+        cfg.inference.inter_threads = i32::MAX as usize + 1;
+
+        let err = cfg.validate().unwrap_err().to_string();
+
+        assert!(err.contains("inference.inter_threads must be between 1 and"));
+    }
+
+    #[test]
+    fn partial_inference_section_uses_defaults_for_omitted_fields() {
+        let content = RapidOcrConfig::ppocr_v6_small("models")
+            .to_toml_string()
+            .unwrap();
+        let content = content.replace(
+            "[inference]\nintra_threads = 1\ninter_threads = 1\nparallel_execution = false\nexecution_provider = \"cpu\"",
+            "[inference]\nexecution_provider = \"cpu\"",
+        );
+
+        let loaded = RapidOcrConfig::from_toml_str(&content).unwrap();
+
+        assert_eq!(loaded.inference, InferenceOptions::default());
+    }
+
+    #[test]
+    fn directml_config_rejects_parallel_execution() {
+        let mut cfg = RapidOcrConfig::ppocr_v6_small("models");
+        cfg.inference.execution_provider = ExecutionProvider::DirectMl;
+        cfg.inference.parallel_execution = true;
+
+        let err = cfg.validate().unwrap_err().to_string();
+
+        #[cfg(feature = "directml")]
+        assert!(err.contains("must be false when using DirectML"));
+        #[cfg(not(feature = "directml"))]
+        assert!(err.contains("requires the `directml` Cargo feature"));
+    }
+
+    #[cfg(feature = "directml")]
+    #[test]
+    fn directml_config_is_valid_with_serial_execution_on_windows() {
+        let mut cfg = RapidOcrConfig::ppocr_v6_small("models");
+        cfg.inference.execution_provider = ExecutionProvider::DirectMl;
+
+        if cfg!(target_os = "windows") {
+            cfg.validate().unwrap();
+        } else {
+            assert!(cfg
+                .validate()
+                .unwrap_err()
+                .to_string()
+                .contains("only available on Windows"));
+        }
     }
 }

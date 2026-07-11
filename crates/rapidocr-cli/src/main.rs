@@ -3,7 +3,7 @@ use std::{path::PathBuf, time::Instant};
 use anyhow::Result;
 use clap::Parser;
 use rapidocr_core::{
-    config::RapidOcrConfig,
+    config::{ExecutionProvider, RapidOcrConfig},
     model::{
         available_model_set_names, model_set_by_name, ModelCache, ModelDownloadMode, ModelSetSpec,
         DEFAULT_MODEL_SET_NAME,
@@ -34,6 +34,9 @@ struct Args {
     no_download: bool,
 
     #[arg(long)]
+    directml: bool,
+
+    #[arg(long)]
     no_det: bool,
 
     #[arg(long)]
@@ -59,7 +62,7 @@ fn main() -> Result<()> {
         let model_set = select_model_set(&args.model_set)?;
         let cache = ModelCache::new(&args.model_dir);
         let mut cfg = cache.config_for(model_set);
-        apply_pipeline_overrides(&mut cfg, &args);
+        apply_overrides(&mut cfg, &args);
         cfg.write_toml_file(path)?;
         return Ok(());
     }
@@ -79,13 +82,13 @@ fn main() -> Result<()> {
         };
         let model_set = select_model_set(&args.model_set)?;
         let mut cfg = cache.config_for(model_set);
-        apply_pipeline_overrides(&mut cfg, &args);
+        apply_overrides(&mut cfg, &args);
         cfg.validate()?;
         cache.ensure_model_set_for_pipeline(model_set, cfg.pipeline, mode)?;
         cfg
     };
 
-    apply_pipeline_overrides(&mut cfg, &args);
+    apply_overrides(&mut cfg, &args);
     cfg.validate()?;
     let model_load_start = Instant::now();
     let mut ocr = RapidOcr::new(cfg)?;
@@ -173,7 +176,7 @@ fn select_model_set(name: &str) -> Result<&'static ModelSetSpec> {
     })
 }
 
-fn apply_pipeline_overrides(cfg: &mut RapidOcrConfig, args: &Args) {
+fn apply_overrides(cfg: &mut RapidOcrConfig, args: &Args) {
     if args.no_det {
         cfg.pipeline.use_det = false;
     }
@@ -183,6 +186,9 @@ fn apply_pipeline_overrides(cfg: &mut RapidOcrConfig, args: &Args) {
     }
     if args.no_cls {
         cfg.pipeline.use_cls = false;
+    }
+    if args.directml {
+        cfg.inference.execution_provider = ExecutionProvider::DirectMl;
     }
 }
 
@@ -205,5 +211,18 @@ mod tests {
         assert!(message.contains("unknown model set"));
         assert!(message.contains("missing-model-set"));
         assert!(message.contains(DEFAULT_MODEL_SET_NAME));
+    }
+
+    #[test]
+    fn directml_flag_selects_directml_execution_provider() {
+        let args = Args::try_parse_from(["rapidocr", "--directml"]).unwrap();
+        let mut cfg = RapidOcrConfig::ppocr_v6_small("models");
+
+        apply_overrides(&mut cfg, &args);
+
+        assert_eq!(
+            cfg.inference.execution_provider,
+            ExecutionProvider::DirectMl
+        );
     }
 }

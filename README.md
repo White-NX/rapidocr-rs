@@ -58,7 +58,7 @@ Use the library API:
 
 ```rust
 use rapidocr_core::{
-    config::PipelineConfig,
+    config::{InferenceOptions, PipelineConfig},
     model::{model_set_by_name, ModelCache, ModelDownloadMode},
     RapidOcr,
 };
@@ -74,7 +74,13 @@ fn main() -> anyhow::Result<()> {
 
     let cfg = cache
         .config_for(model_set)
-        .with_pipeline(PipelineConfig::without_cls());
+        .with_pipeline(PipelineConfig::without_cls())
+        .with_inference_options(InferenceOptions {
+            intra_threads: 1,
+            inter_threads: 1,
+            parallel_execution: false,
+            ..Default::default()
+        });
     let mut ocr = RapidOcr::from_config(cfg)?;
     let output = ocr.run_path("path/to/image.png")?;
 
@@ -105,6 +111,26 @@ Projects using `rapidocr-core` can handle models in one of three ways:
 - Provide explicit `model_path` and `dict_path` values in a TOML config when models are managed by the application or an internal artifact store.
 
 The default local model directory is `models`, which is ignored by git.
+
+Model downloading is enabled by the default `model-download` Cargo feature. Applications that
+pre-populate model files can avoid the blocking `reqwest` dependency with
+`rapidocr-core = { version = "0.2.0", default-features = false }`.
+
+On Windows, enable DirectML inference on a DirectX 12-capable GPU with:
+
+```toml
+rapidocr-core = { version = "0.2.0", features = ["directml"] }
+```
+
+Select `ExecutionProvider::DirectMl` in `InferenceOptions` to use it. DirectML initialization is
+fail-fast, requires `parallel_execution = false`, and unsupported operators may still fall back to
+the CPU provider. In TOML, set `inference.execution_provider = "direct-ml"`.
+
+The workspace CLI forwards the feature and exposes an explicit flag:
+
+```powershell
+cargo run -p rapidocr-cli --features directml -- --directml --image path\to\image.png
+```
 
 ## Supported Model Sets
 
