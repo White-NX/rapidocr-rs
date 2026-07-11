@@ -14,4 +14,7 @@ The binary is named `rapidocr` and can:
 
 Models are not bundled in the crate package. Use `--model-dir` with the default download behavior, pass `--no-download` when models are pre-populated, or run from an explicit TOML config.
 
+On Windows, pass `--features directml` at build time and `--directml` at runtime to use the
+DirectML execution provider on a DirectX 12-capable GPU.
+
 See the workspace `README.md` for full commands and parity workflows.

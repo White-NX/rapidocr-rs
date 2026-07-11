@@ -3,7 +3,7 @@ use std::time::Instant;
 use anyhow::{Context, Result};
 
 use crate::{
-    config::{DetConfig, LimitType},
+    config::{DetConfig, InferenceOptions, LimitType},
     db_postprocess::{DbPostProcess, DbPostProcessConfig},
     image_ops::{resize_to_multiple_for_det, rgb_to_nchw},
     inference::OnnxSession,
@@ -17,9 +17,9 @@ pub(crate) struct TextDetector {
 }
 
 impl TextDetector {
-    pub(crate) fn new(cfg: DetConfig) -> Result<Self> {
+    pub(crate) fn new(cfg: DetConfig, inference: InferenceOptions) -> Result<Self> {
         cfg.validate().context("invalid detection config")?;
-        let session = OnnxSession::new(&cfg.model_path).with_context(|| {
+        let session = OnnxSession::new(&cfg.model_path, inference).with_context(|| {
             format!(
                 "failed to load detection model {}",
                 cfg.model_path.display()

@@ -58,7 +58,10 @@ impl RapidOcr {
                 .det
                 .clone()
                 .context("pipeline.use_det is true but [det] config is missing")?;
-            Some(TextDetector::new(det_cfg).context("failed to initialize detection stage")?)
+            Some(
+                TextDetector::new(det_cfg, cfg.inference)
+                    .context("failed to initialize detection stage")?,
+            )
         } else {
             None
         };
@@ -68,7 +71,7 @@ impl RapidOcr {
                 .clone()
                 .context("pipeline.use_cls is true but [cls] config is missing")?;
             Some(
-                TextClassifier::new(cls_cfg)
+                TextClassifier::new(cls_cfg, cfg.inference)
                     .context("failed to initialize classification stage")?,
             )
         } else {
@@ -79,7 +82,10 @@ impl RapidOcr {
                 .rec
                 .clone()
                 .context("pipeline.use_rec is true but [rec] config is missing")?;
-            Some(TextRecognizer::new(rec_cfg).context("failed to initialize recognition stage")?)
+            Some(
+                TextRecognizer::new(rec_cfg, cfg.inference)
+                    .context("failed to initialize recognition stage")?,
+            )
         } else {
             None
         };

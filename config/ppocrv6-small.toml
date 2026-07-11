@@ -4,6 +4,12 @@ max_side_len = 2000
 min_height = 30
 width_height_ratio = 8.0
 
+[inference]
+intra_threads = 1
+inter_threads = 1
+parallel_execution = false
+execution_provider = "cpu"
+
 [pipeline]
 use_det = true
 use_cls = true

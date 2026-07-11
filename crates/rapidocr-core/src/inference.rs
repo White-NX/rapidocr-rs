@@ -4,12 +4,16 @@ use anyhow::{anyhow, bail, Context, Result};
 use ndarray::{Array4, ArrayD};
 use ort::{session::builder::GraphOptimizationLevel, session::Session, value::TensorRef};
 
+#[cfg(feature = "directml")]
+use crate::config::ExecutionProvider;
+use crate::config::InferenceOptions;
+
 pub(crate) struct OnnxSession {
     session: Session,
 }
 
 impl OnnxSession {
-    pub(crate) fn new(model_path: impl AsRef<Path>) -> Result<Self> {
+    pub(crate) fn new(model_path: impl AsRef<Path>, options: InferenceOptions) -> Result<Self> {
         let model_path = model_path.as_ref();
         if !model_path.exists() {
             bail!(
@@ -20,10 +24,28 @@ impl OnnxSession {
         if !model_path.is_file() {
             bail!("ONNX model path is not a file: {}", model_path.display());
         }
-        let session = Session::builder()
+        options.validate()?;
+        let mut session_builder = Session::builder()
             .map_err(|e| anyhow!(e.to_string()))?
             .with_optimization_level(GraphOptimizationLevel::Level3)
             .map_err(|e| anyhow!(e.to_string()))?
+            .with_intra_threads(options.intra_threads)
+            .map_err(|e| anyhow!(e.to_string()))?
+            .with_inter_threads(options.inter_threads)
+            .map_err(|e| anyhow!(e.to_string()))?
+            .with_parallel_execution(options.parallel_execution)
+            .map_err(|e| anyhow!(e.to_string()))?;
+
+        #[cfg(feature = "directml")]
+        if options.execution_provider == ExecutionProvider::DirectMl {
+            session_builder = session_builder
+                .with_memory_pattern(false)
+                .map_err(|e| anyhow!(e.to_string()))?
+                .with_execution_providers([ort::ep::DirectML::default().build().error_on_failure()])
+                .map_err(|e| anyhow!(e.to_string()))?;
+        }
+
+        let session = session_builder
             .commit_from_file(model_path)
             .map_err(|e| anyhow!(e.to_string()))
             .with_context(|| format!("failed to load ONNX model {}", model_path.display()))?;

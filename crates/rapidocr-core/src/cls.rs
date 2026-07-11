@@ -4,7 +4,11 @@ use anyhow::{bail, Context, Result};
 use image::{imageops, RgbImage};
 use ndarray::{s, Array4, Ix2};
 
-use crate::{config::ClsConfig, inference::OnnxSession, types::OcrTimings};
+use crate::{
+    config::{ClsConfig, InferenceOptions},
+    inference::OnnxSession,
+    types::OcrTimings,
+};
 
 #[derive(Debug, Clone)]
 pub(crate) struct ClsResult {
@@ -18,9 +22,9 @@ pub(crate) struct TextClassifier {
 }
 
 impl TextClassifier {
-    pub(crate) fn new(cfg: ClsConfig) -> Result<Self> {
+    pub(crate) fn new(cfg: ClsConfig, inference: InferenceOptions) -> Result<Self> {
         cfg.validate().context("invalid classification config")?;
-        let session = OnnxSession::new(&cfg.model_path).with_context(|| {
+        let session = OnnxSession::new(&cfg.model_path, inference).with_context(|| {
             format!(
                 "failed to load classification model {}",
                 cfg.model_path.display()

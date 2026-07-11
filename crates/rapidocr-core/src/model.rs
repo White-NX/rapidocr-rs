@@ -6,9 +6,11 @@
 
 use std::{
     fs,
-    io::Write,
     path::{Path, PathBuf},
 };
+
+#[cfg(feature = "model-download")]
+use std::io::Write;
 
 use anyhow::{bail, Context, Result};
 use sha2::{Digest, Sha256};
@@ -44,8 +46,12 @@ const PPOCRV4_CLS_URL: &str =
 const PPOCRV4_CLS_SHA256: &str = "e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c";
 const PPOCRV6_DICT_URL: &str =
     "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/master/paddle/PP-OCRv6/rec/PP-OCRv6_rec_small/ppocrv6_dict.txt";
+const PPOCRV6_DICT_SHA256: &str =
+    "b5f2bfe2bdd9448429e3e82b51c789775d9b42f2403d082b00662eb77e401c5d";
 const PPOCRV6_TINY_DICT_URL: &str =
     "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/master/paddle/PP-OCRv6/rec/PP-OCRv6_rec_tiny/ppocrv6_tiny_dict.txt";
+const PPOCRV6_TINY_DICT_SHA256: &str =
+    "c5cbe34ef40c29c4df07ed012bf96569cb69a2d2a01a07027e9f13cb832bd9cd";
 const PPOCRV4_EN_DET_MOBILE_URL: &str =
     "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.0/onnx/PP-OCRv4/det/en_PP-OCRv3_det_mobile.onnx";
 const PPOCRV4_EN_DET_MOBILE_SHA256: &str =
@@ -56,6 +62,8 @@ const PPOCRV4_EN_REC_MOBILE_SHA256: &str =
     "e8770c967605983d1570cdf5352041dfb68fa0c21664f49f47b155abd3e0e318";
 const PPOCRV4_EN_DICT_URL: &str =
     "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.0/paddle/PP-OCRv4/rec/en_PP-OCRv4_rec_mobile/en_dict.txt";
+const PPOCRV4_EN_DICT_SHA256: &str =
+    "5662df9d2d03f0e8ca0d3b0649d6acbab904b6a14b3d3521463c71c37c668ce3";
 const PPOCRV5_CH_DET_MOBILE_URL: &str =
     "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.0/onnx/PP-OCRv5/det/ch_PP-OCRv5_det_mobile.onnx";
 const PPOCRV5_CH_DET_MOBILE_SHA256: &str =
@@ -82,8 +90,12 @@ const PPOCRV5_CLS_SERVER_SHA256: &str =
     "7d3c02ef6c7da8ae08b4347cc7695b2081aae68c325d64375724ecf39c99e743";
 const PPOCRV5_DICT_URL: &str =
     "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.0/paddle/PP-OCRv5/rec/ch_PP-OCRv5_rec_server/ppocrv5_dict.txt";
+const PPOCRV5_DICT_SHA256: &str =
+    "d1979e9f794c464c0d2e0b70a7fe14dd978e9dc644c0e71f14158cdf8342af1b";
 const PPOCRV5_EN_DICT_URL: &str =
     "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.0/paddle/PP-OCRv5/rec/en_PP-OCRv5_rec_mobile/ppocrv5_en_dict.txt";
+const PPOCRV5_EN_DICT_SHA256: &str =
+    "e025a66d31f327ba0c232e03f407ae8d105e1e709e7ccb3f408aa778c24e70d6";
 /// Default registered model-set name used by the CLI and examples.
 pub const DEFAULT_MODEL_SET_NAME: &str = "ppocrv6-small";
 
@@ -215,6 +227,7 @@ impl ModelSetSpec {
         let model_dir = model_dir.into();
         RapidOcrConfig {
             pipeline: PipelineConfig::full(),
+            inference: Default::default(),
             text_score: 0.5,
             min_side_len: 30,
             max_side_len: 2000,
@@ -307,7 +320,7 @@ const PPOCRV6_DICT: ModelAssetSpec = ModelAssetSpec {
     kind: ModelAssetKind::Dictionary,
     filename: "ppocrv6_dict.txt",
     url: PPOCRV6_DICT_URL,
-    sha256: None,
+    sha256: Some(PPOCRV6_DICT_SHA256),
 };
 
 const PPOCRV6_TINY_DICT: ModelAssetSpec = ModelAssetSpec {
@@ -315,7 +328,7 @@ const PPOCRV6_TINY_DICT: ModelAssetSpec = ModelAssetSpec {
     kind: ModelAssetKind::Dictionary,
     filename: "ppocrv6_tiny_dict.txt",
     url: PPOCRV6_TINY_DICT_URL,
-    sha256: None,
+    sha256: Some(PPOCRV6_TINY_DICT_SHA256),
 };
 
 const PPOCRV4_CLS: ModelAssetSpec = ModelAssetSpec {
@@ -347,7 +360,7 @@ const PPOCRV4_EN_DICT: ModelAssetSpec = ModelAssetSpec {
     kind: ModelAssetKind::Dictionary,
     filename: "en_dict.txt",
     url: PPOCRV4_EN_DICT_URL,
-    sha256: None,
+    sha256: Some(PPOCRV4_EN_DICT_SHA256),
 };
 
 const PPOCRV5_CH_DET_MOBILE: ModelAssetSpec = ModelAssetSpec {
@@ -403,7 +416,7 @@ const PPOCRV5_DICT: ModelAssetSpec = ModelAssetSpec {
     kind: ModelAssetKind::Dictionary,
     filename: "ppocrv5_dict.txt",
     url: PPOCRV5_DICT_URL,
-    sha256: None,
+    sha256: Some(PPOCRV5_DICT_SHA256),
 };
 
 const PPOCRV5_EN_DICT: ModelAssetSpec = ModelAssetSpec {
@@ -411,7 +424,7 @@ const PPOCRV5_EN_DICT: ModelAssetSpec = ModelAssetSpec {
     kind: ModelAssetKind::Dictionary,
     filename: "ppocrv5_en_dict.txt",
     url: PPOCRV5_EN_DICT_URL,
-    sha256: None,
+    sha256: Some(PPOCRV5_EN_DICT_SHA256),
 };
 
 const PPOCRV6_DET_PARAMS: DetModelSpec = DetModelSpec {
@@ -675,6 +688,7 @@ pub fn ensure_ppocrv6_small_models(model_dir: impl AsRef<Path>) -> Result<PathBu
     Ok(cache.root().to_path_buf())
 }
 
+#[cfg(feature = "model-download")]
 fn download_asset(asset: ModelAssetSpec, path: &Path) -> Result<()> {
     let client = reqwest::blocking::Client::builder()
         .user_agent("Mozilla/5.0 rapidocr-rs")
@@ -698,6 +712,15 @@ fn download_asset(asset: ModelAssetSpec, path: &Path) -> Result<()> {
         verify_sha256(path, expected)?;
     }
     Ok(())
+}
+
+#[cfg(not(feature = "model-download"))]
+fn download_asset(asset: ModelAssetSpec, path: &Path) -> Result<()> {
+    bail!(
+        "missing model asset {} at {}; rapidocr-core was built without the `model-download` feature, so enable it or place the file in the model cache",
+        asset.name,
+        path.display()
+    )
 }
 
 fn verify_sha256(path: &Path, expected: &str) -> Result<()> {
@@ -844,6 +867,20 @@ mod tests {
     }
 
     #[test]
+    fn all_registered_model_assets_have_sha256_checksums() {
+        for model_set in available_model_sets() {
+            for asset in model_set.assets() {
+                assert!(
+                    asset.sha256.is_some(),
+                    "{} in {} is missing a SHA-256 checksum",
+                    asset.filename,
+                    model_set.name
+                );
+            }
+        }
+    }
+
+    #[test]
     fn model_cache_reports_missing_assets_without_downloading() {
         let root = std::env::temp_dir().join(format!(
             "rapidocr-rs-missing-model-cache-{}",
@@ -863,5 +900,28 @@ mod tests {
 
         assert!(message.contains("failed to prepare PP-OCRv6 small detection model"));
         assert!(message.contains("missing model asset"));
+    }
+
+    #[cfg(not(feature = "model-download"))]
+    #[test]
+    fn model_cache_explains_when_download_feature_is_disabled() {
+        let root = std::env::temp_dir().join(format!(
+            "rapidocr-rs-disabled-download-cache-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        let cache = ModelCache::new(&root);
+
+        let err = cache
+            .ensure_model_set_for_pipeline(
+                &PPOCRV6_SMALL,
+                PipelineConfig::detection_only(),
+                ModelDownloadMode::Missing,
+            )
+            .unwrap_err();
+        let message = format!("{err:#}");
+        let _ = fs::remove_dir_all(&root);
+
+        assert!(message.contains("without the `model-download` feature"));
     }
 }
