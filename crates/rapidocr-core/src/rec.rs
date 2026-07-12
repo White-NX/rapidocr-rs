@@ -42,11 +42,21 @@ impl TextRecognizer {
             });
         }
 
-        let mut results = Vec::with_capacity(imgs.len());
-        for chunk in imgs.chunks(self.cfg.batch_size) {
+        // RapidOCR sorts crops by aspect ratio before batching. Grouping crops
+        // with similar widths avoids padding every item to an unrelated wide
+        // crop, then results are restored to detection order below.
+        let mut indices = (0..imgs.len()).collect::<Vec<_>>();
+        indices.sort_by(|a, b| {
+            let a_ratio = imgs[*a].width() as f32 / imgs[*a].height().max(1) as f32;
+            let b_ratio = imgs[*b].width() as f32 / imgs[*b].height().max(1) as f32;
+            a_ratio.total_cmp(&b_ratio)
+        });
+
+        let mut results = (0..imgs.len()).map(|_| None).collect::<Vec<_>>();
+        for chunk in indices.chunks(self.cfg.batch_size) {
             let max_wh_ratio = chunk
                 .iter()
-                .map(|img| img.width() as f32 / img.height().max(1) as f32)
+                .map(|idx| imgs[*idx].width() as f32 / imgs[*idx].height().max(1) as f32)
                 .fold(
                     self.cfg.image_shape[2] as f32 / self.cfg.image_shape[1] as f32,
                     f32::max,
@@ -63,7 +73,8 @@ impl TextRecognizer {
             ));
 
             let start = Instant::now();
-            for (i, img) in chunk.iter().enumerate() {
+            for (i, idx) in chunk.iter().enumerate() {
+                let img = &imgs[*idx];
                 let norm = self.resize_norm_img(img, max_wh_ratio)?;
                 batch.slice_mut(s![i, .., .., ..]).assign(&norm);
             }
@@ -76,10 +87,17 @@ impl TextRecognizer {
             let start = Instant::now();
             let pred = pred.into_dimensionality::<Ix3>()?;
             for i in 0..pred.shape()[0] {
-                results.push(self.decode_one(pred.slice(s![i, .., ..]))?);
+                results[chunk[i]] = Some(self.decode_one(pred.slice(s![i, .., ..]))?);
             }
             timings.rec_decode_ms += elapsed_ms(start);
         }
+        let results = results
+            .into_iter()
+            .enumerate()
+            .map(|(idx, result)| {
+                result.with_context(|| format!("recognition result missing for crop {idx}"))
+            })
+            .collect::<Result<Vec<_>>>()?;
         Ok(RecognizeResult {
             texts: results,
             timings,

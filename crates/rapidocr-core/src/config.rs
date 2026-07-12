@@ -159,6 +159,8 @@ pub struct InferenceOptions {
     pub inter_threads: usize,
     /// Enables parallel graph execution, which can increase memory usage.
     pub parallel_execution: bool,
+    /// Enables ONNX Runtime's CPU arena allocator.
+    pub enable_cpu_mem_arena: bool,
     /// Execution provider used by each ONNX Runtime session.
     #[serde(default)]
     pub execution_provider: ExecutionProvider,
@@ -201,6 +203,7 @@ impl Default for InferenceOptions {
             intra_threads: 1,
             inter_threads: 1,
             parallel_execution: false,
+            enable_cpu_mem_arena: false,
             execution_provider: ExecutionProvider::Cpu,
         }
     }
@@ -525,7 +528,7 @@ mod tests {
             .to_toml_string()
             .unwrap();
         let content = content.replace(
-            "[inference]\nintra_threads = 1\ninter_threads = 1\nparallel_execution = false\nexecution_provider = \"cpu\"\n\n",
+            "[inference]\nintra_threads = 1\ninter_threads = 1\nparallel_execution = false\nenable_cpu_mem_arena = false\nexecution_provider = \"cpu\"\n\n",
             "",
         );
 
@@ -560,7 +563,7 @@ mod tests {
             .to_toml_string()
             .unwrap();
         let content = content.replace(
-            "[inference]\nintra_threads = 1\ninter_threads = 1\nparallel_execution = false\nexecution_provider = \"cpu\"",
+            "[inference]\nintra_threads = 1\ninter_threads = 1\nparallel_execution = false\nenable_cpu_mem_arena = false\nexecution_provider = \"cpu\"",
             "[inference]\nexecution_provider = \"cpu\"",
         );
 

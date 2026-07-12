@@ -138,6 +138,7 @@ cargo run -p rapidocr-cli --features directml -- --directml --image path\to\imag
 - `ppocrv6-tiny`
 - `ppocrv6-medium`
 - `ppocrv4-en-mobile`
+- `ppocrv5-ch-mobile`
 - `ppocrv5-en-mobile`
 - `ppocrv5-ch-server`
 

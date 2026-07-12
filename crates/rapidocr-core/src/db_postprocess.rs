@@ -459,15 +459,27 @@ fn polygon_score_point_in_poly(
 }
 
 fn sort_candidates(mut boxes: Vec<DetCandidate>) -> Vec<DetCandidate> {
-    boxes.sort_by(|a, b| {
-        let ay = a.bbox.points[0][1];
-        let by = b.bbox.points[0][1];
-        if (ay - by).abs() < 10.0 {
-            a.bbox.points[0][0].total_cmp(&b.bbox.points[0][0])
-        } else {
-            ay.total_cmp(&by)
+    const LINE_Y_THRESHOLD: f32 = 10.0;
+
+    // Match RapidOCR's two-step reading-order sort. Using the threshold inside
+    // a comparison function is not transitive (A can share a line with B, B
+    // with C, while A and C are compared by Y), which can make Rust's sort
+    // detect an invalid total order and panic.
+    boxes.sort_by(|a, b| a.bbox.points[0][1].total_cmp(&b.bbox.points[0][1]));
+
+    let mut line_start = 0;
+    while line_start < boxes.len() {
+        let mut line_end = line_start + 1;
+        while line_end < boxes.len()
+            && boxes[line_end].bbox.points[0][1] - boxes[line_end - 1].bbox.points[0][1]
+                < LINE_Y_THRESHOLD
+        {
+            line_end += 1;
         }
-    });
+        boxes[line_start..line_end]
+            .sort_by(|a, b| a.bbox.points[0][0].total_cmp(&b.bbox.points[0][0]));
+        line_start = line_end;
+    }
     boxes
 }
 
@@ -480,6 +492,32 @@ mod tests {
     use serde::Deserialize;
 
     use super::*;
+
+    #[test]
+    fn candidate_sort_handles_chained_line_threshold_without_panicking() {
+        let boxes = vec![
+            DetCandidate {
+                bbox: Quad::from_xyxy(0.0, 18.0, 4.0, 22.0),
+                score: 1.0,
+            },
+            DetCandidate {
+                bbox: Quad::from_xyxy(1.0, 9.0, 5.0, 13.0),
+                score: 1.0,
+            },
+            DetCandidate {
+                bbox: Quad::from_xyxy(2.0, 0.0, 6.0, 4.0),
+                score: 1.0,
+            },
+        ];
+
+        let sorted = sort_candidates(boxes);
+        let xs = sorted
+            .iter()
+            .map(|candidate| candidate.bbox.points[0][0])
+            .collect::<Vec<_>>();
+
+        assert_eq!(xs, vec![0.0, 1.0, 2.0]);
+    }
 
     #[derive(Debug, Deserialize)]
     struct Fixture {
