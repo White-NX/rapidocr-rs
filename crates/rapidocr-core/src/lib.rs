@@ -6,6 +6,7 @@
 //! recognition, image preprocessing, and postprocessing modules are internal
 //! implementation details.
 
+pub mod cancellation;
 pub(crate) mod cls;
 pub mod config;
 pub(crate) mod db_postprocess;
@@ -16,6 +17,13 @@ pub(crate) mod inference;
 pub mod model;
 pub(crate) mod rec;
 pub mod types;
+
+#[cfg(feature = "tokio")]
+pub mod tokio;
+
+pub use cancellation::{is_cancelled_error, OcrCancellationToken, OcrCancelled};
+#[cfg(feature = "tokio")]
+pub use tokio::{OcrTask, TokioOcrError, TokioRapidOcr};
 
 #[cfg(test)]
 mod e2e_tests;
@@ -120,13 +128,35 @@ impl RapidOcr {
         Ok(self.run_path_timed(image_path)?.output)
     }
 
+    /// Loads an image and runs OCR with cooperative cancellation.
+    pub fn run_path_cancellable(
+        &mut self,
+        image_path: impl AsRef<Path>,
+        cancellation: &OcrCancellationToken,
+    ) -> Result<OcrOutput> {
+        Ok(self
+            .run_path_cancellable_timed(image_path, cancellation)?
+            .output)
+    }
+
     /// Loads an image from disk and returns OCR lines with stage timings.
     pub fn run_path_timed(&mut self, image_path: impl AsRef<Path>) -> Result<TimedOcrOutput> {
+        self.run_path_cancellable_timed(image_path, &OcrCancellationToken::new())
+    }
+
+    /// Loads an image and runs OCR with timing details and cooperative cancellation.
+    pub fn run_path_cancellable_timed(
+        &mut self,
+        image_path: impl AsRef<Path>,
+        cancellation: &OcrCancellationToken,
+    ) -> Result<TimedOcrOutput> {
         let total_start = Instant::now();
+        cancellation.checkpoint()?;
         let start = Instant::now();
         let image = load_rgb_image(image_path)?;
         let image_load_ms = elapsed_ms(start);
-        let mut timed = self.run_image_timed(&image)?;
+        cancellation.checkpoint()?;
+        let mut timed = self.run_image_cancellable_timed(&image, cancellation)?;
         timed.timings.image_load_ms = image_load_ms;
         timed.timings.total_ms = elapsed_ms(total_start);
         Ok(timed)
@@ -137,14 +167,35 @@ impl RapidOcr {
         Ok(self.run_image_timed(image)?.output)
     }
 
+    /// Runs OCR on an RGB image with cooperative cancellation.
+    pub fn run_image_cancellable(
+        &mut self,
+        image: &image::RgbImage,
+        cancellation: &OcrCancellationToken,
+    ) -> Result<OcrOutput> {
+        Ok(self
+            .run_image_cancellable_timed(image, cancellation)?
+            .output)
+    }
+
     /// Runs OCR on an RGB image already loaded by the caller and records timings.
     ///
     /// With detection disabled, the whole input image is treated as one
     /// recognition crop. With recognition disabled, the output contains detected
     /// boxes with empty text and score `0.0`.
     pub fn run_image_timed(&mut self, image: &image::RgbImage) -> Result<TimedOcrOutput> {
+        self.run_image_cancellable_timed(image, &OcrCancellationToken::new())
+    }
+
+    /// Runs OCR on an RGB image with timing details and cooperative cancellation.
+    pub fn run_image_cancellable_timed(
+        &mut self,
+        image: &image::RgbImage,
+        cancellation: &OcrCancellationToken,
+    ) -> Result<TimedOcrOutput> {
         let total_start = Instant::now();
         let mut timings = OcrTimings::default();
+        cancellation.checkpoint()?;
         if image.width() == 0 || image.height() == 0 {
             bail!("invalid image: width and height must be greater than 0");
         }
@@ -153,7 +204,7 @@ impl RapidOcr {
         let needs_recognition = self.recognizer.is_some();
         let (boxes, crops) = if detection_enabled {
             let (boxes, crops, det_timings) =
-                self.detect_and_crop_timed(image, needs_recognition)?;
+                self.detect_and_crop_timed(image, needs_recognition, cancellation)?;
             timings.add_assign(&det_timings);
             (boxes, crops)
         } else {
@@ -165,6 +216,7 @@ impl RapidOcr {
             );
             (vec![bbox], vec![image.clone()])
         };
+        cancellation.checkpoint()?;
 
         let Some(recognizer) = &mut self.recognizer else {
             let lines = boxes
@@ -183,16 +235,17 @@ impl RapidOcr {
         };
 
         let crops = if let Some(classifier) = &mut self.classifier {
-            let cls = classifier.classify_and_rotate_owned_timed(crops)?;
+            let cls = classifier.classify_and_rotate_owned_timed(crops, cancellation)?;
             timings.add_assign(&cls.timings);
             cls.imgs
         } else {
             crops
         };
-        let rec = recognizer.recognize_timed(&crops)?;
+        let rec = recognizer.recognize_timed(&crops, cancellation)?;
         timings.add_assign(&rec.timings);
 
         let start = Instant::now();
+        cancellation.checkpoint()?;
         let lines = boxes
             .into_iter()
             .zip(rec.texts)
@@ -223,8 +276,10 @@ impl RapidOcr {
         &mut self,
         image: &image::RgbImage,
         needs_crops: bool,
+        cancellation: &OcrCancellationToken,
     ) -> Result<(Vec<Quad>, Vec<image::RgbImage>, OcrTimings)> {
         let mut timings = OcrTimings::default();
+        cancellation.checkpoint()?;
         let original_width = image.width();
         let original_height = image.height();
 
@@ -239,7 +294,7 @@ impl RapidOcr {
             .detector
             .as_mut()
             .context("detection stage is not enabled")?;
-        let det = detector.detect_timed(&det_image)?;
+        let det = detector.detect_timed(&det_image, cancellation)?;
         timings.add_assign(&det.timings);
         let mut boxes = det.boxes;
 
@@ -248,15 +303,18 @@ impl RapidOcr {
         // the boxes. Only after crop generation do we remove padding and scale
         // coordinates back to the caller's original image space.
         let crops = if needs_crops {
-            boxes
-                .iter()
-                .map(|b| crop_perspective(&det_image, b))
-                .collect::<Result<Vec<_>>>()?
+            let mut crops = Vec::with_capacity(boxes.len());
+            for bbox in &boxes {
+                cancellation.checkpoint()?;
+                crops.push(crop_perspective(&det_image, bbox)?);
+            }
+            crops
         } else {
             Vec::new()
         };
 
         for b in &mut boxes {
+            cancellation.checkpoint()?;
             if padding_top > 0 {
                 for point in &mut b.points {
                     point[1] -= padding_top as f32;

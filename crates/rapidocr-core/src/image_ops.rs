@@ -8,7 +8,7 @@ use image::{
 use imageproc::geometric_transformations::{warp_into, Interpolation, Projection};
 use ndarray::Array4;
 
-use crate::types::Quad;
+use crate::{cancellation::OcrCancellationToken, types::Quad};
 
 pub(crate) fn load_rgb_image(path: impl AsRef<Path>) -> Result<RgbImage> {
     let path = path.as_ref();
@@ -172,15 +172,23 @@ pub(crate) fn resize_to_multiple_for_det(
     ))
 }
 
-pub(crate) fn rgb_to_nchw(img: &RgbImage, mean: [f32; 3], std: [f32; 3]) -> Array4<f32> {
+pub(crate) fn rgb_to_nchw(
+    img: &RgbImage,
+    mean: [f32; 3],
+    std: [f32; 3],
+    cancellation: &OcrCancellationToken,
+) -> Result<Array4<f32>> {
     let (w, h) = img.dimensions();
     let mut array = Array4::<f32>::zeros((1, 3, h as usize, w as usize));
     for (x, y, pixel) in img.enumerate_pixels() {
+        if x == 0 && y.is_multiple_of(32) {
+            cancellation.checkpoint()?;
+        }
         for c in 0..3 {
             array[[0, c, y as usize, x as usize]] = (pixel[c] as f32 / 255.0 - mean[c]) / std[c];
         }
     }
-    array
+    Ok(array)
 }
 
 pub(crate) fn crop_axis_aligned(img: &RgbImage, bbox: &Quad) -> Result<RgbImage> {
