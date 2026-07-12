@@ -3,6 +3,7 @@ use std::time::Instant;
 use anyhow::{Context, Result};
 
 use crate::{
+    cancellation::OcrCancellationToken,
     config::{DetConfig, InferenceOptions, LimitType},
     db_postprocess::{DbPostProcess, DbPostProcessConfig},
     image_ops::{resize_to_multiple_for_det, rgb_to_nchw},
@@ -33,8 +34,13 @@ impl TextDetector {
         })
     }
 
-    pub(crate) fn detect_timed(&mut self, img: &image::RgbImage) -> Result<DetectResult> {
+    pub(crate) fn detect_timed(
+        &mut self,
+        img: &image::RgbImage,
+        cancellation: &OcrCancellationToken,
+    ) -> Result<DetectResult> {
         let mut timings = OcrTimings::default();
+        cancellation.checkpoint()?;
 
         let start = Instant::now();
         // The detector expects dimensions divisible by 32 and normalized NCHW
@@ -45,17 +51,17 @@ impl TextDetector {
             self.cfg.limit_side_len,
             matches!(self.cfg.limit_type, LimitType::Min),
         )?;
-        let tensor = rgb_to_nchw(&input_img, self.cfg.mean, self.cfg.std);
+        let tensor = rgb_to_nchw(&input_img, self.cfg.mean, self.cfg.std, cancellation)?;
         timings.det_preprocess_ms = elapsed_ms(start);
 
         let start = Instant::now();
-        let pred = self.session.run_f32(&tensor)?;
+        let pred = self.session.run_f32(&tensor, cancellation)?;
         timings.det_inference_ms = elapsed_ms(start);
 
         let start = Instant::now();
         let boxes = self
             .postprocess
-            .process(pred, img.width(), img.height())?
+            .process_cancellable(pred, img.width(), img.height(), cancellation)?
             .into_iter()
             .map(|candidate| candidate.bbox)
             .collect();

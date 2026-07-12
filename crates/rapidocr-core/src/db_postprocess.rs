@@ -4,6 +4,7 @@ use anyhow::Result;
 use ndarray::{ArrayD, Ix4};
 
 use crate::{
+    cancellation::OcrCancellationToken,
     config::DetConfig,
     geometry::{min_area_rect, unclip_quad, Point},
     types::Quad,
@@ -49,29 +50,52 @@ impl DbPostProcess {
         Self { cfg }
     }
 
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn process(
         &self,
         pred: ArrayD<f32>,
         dest_w: u32,
         dest_h: u32,
     ) -> Result<Vec<DetCandidate>> {
+        self.process_cancellable(pred, dest_w, dest_h, &OcrCancellationToken::new())
+    }
+
+    pub(crate) fn process_cancellable(
+        &self,
+        pred: ArrayD<f32>,
+        dest_w: u32,
+        dest_h: u32,
+        cancellation: &OcrCancellationToken,
+    ) -> Result<Vec<DetCandidate>> {
+        cancellation.checkpoint()?;
         let pred = pred.into_dimensionality::<Ix4>()?;
         let map_h = pred.shape()[2];
         let map_w = pred.shape()[3];
         // Python RapidOCR dilates the threshold mask before contour extraction.
         // This Rust path uses connected components plus boundary sampling instead
         // of OpenCV contours, but keeps the same mask-level intent.
-        let mask = dilate_2x2(&pred, self.cfg.thresh, map_w, map_h);
+        let mask = dilate_2x2(&pred, self.cfg.thresh, map_w, map_h, cancellation)?;
         let mut visited = vec![false; map_h * map_w];
         let mut boxes = Vec::new();
 
         for y in 0..map_h {
+            if y.is_multiple_of(16) {
+                cancellation.checkpoint()?;
+            }
             for x in 0..map_w {
                 let idx = y * map_w + x;
                 if visited[idx] || !mask[idx] {
                     continue;
                 }
-                let component = collect_component(&pred, &mask, &mut visited, x, y, map_w, map_h);
+                let component = collect_component(
+                    &pred,
+                    &mask,
+                    &mut visited,
+                    x,
+                    y,
+                    (map_w, map_h),
+                    cancellation,
+                )?;
                 if component.score < self.cfg.box_thresh {
                     continue;
                 }
@@ -245,15 +269,21 @@ fn collect_component(
     visited: &mut [bool],
     start_x: usize,
     start_y: usize,
-    width: usize,
-    height: usize,
-) -> Component {
+    dimensions: (usize, usize),
+    cancellation: &OcrCancellationToken,
+) -> Result<Component> {
+    let (width, height) = dimensions;
     // Use 8-connected components because text probability maps often connect
     // diagonally at thin strokes.
     let mut queue = VecDeque::from([(start_x, start_y)]);
     let mut c = Component::new(start_x, start_y);
 
+    let mut visited_count = 0usize;
     while let Some((x, y)) = queue.pop_front() {
+        visited_count += 1;
+        if visited_count.is_multiple_of(1024) {
+            cancellation.checkpoint()?;
+        }
         let idx = y * width + x;
         if visited[idx] {
             continue;
@@ -272,7 +302,7 @@ fn collect_component(
         }
     }
 
-    c.finish()
+    Ok(c.finish())
 }
 
 fn is_boundary(mask: &[bool], x: usize, y: usize, width: usize, height: usize) -> bool {
@@ -318,9 +348,13 @@ fn dilate_2x2(
     thresh: f32,
     width: usize,
     height: usize,
-) -> Vec<bool> {
+    cancellation: &OcrCancellationToken,
+) -> Result<Vec<bool>> {
     let mut mask = vec![false; width * height];
     for y in 0..height {
+        if y.is_multiple_of(16) {
+            cancellation.checkpoint()?;
+        }
         for x in 0..width {
             if pred[[0, 0, y, x]] <= thresh {
                 continue;
@@ -334,7 +368,7 @@ fn dilate_2x2(
             }
         }
     }
-    mask
+    Ok(mask)
 }
 
 fn polygon_score_fast(pred: &ndarray::ArrayBase<ndarray::OwnedRepr<f32>, Ix4>, bbox: &Quad) -> f32 {

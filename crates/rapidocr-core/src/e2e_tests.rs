@@ -1,13 +1,28 @@
-use std::{env, fs, path::PathBuf};
+use std::{
+    env, fs,
+    path::PathBuf,
+    thread,
+    time::{Duration, Instant},
+};
+
+use image::{Rgb, RgbImage};
 
 use serde::Deserialize;
 
 use crate::{
+    cancellation::{is_cancelled_error, OcrCancellationToken},
     config::{PipelineConfig, RapidOcrConfig},
     model::{model_set_by_name, ModelCache},
     types::OcrLine,
     RapidOcr,
 };
+
+#[cfg(feature = "tokio")]
+use crate::tokio::{TokioOcrError, TokioRapidOcr};
+#[cfg(feature = "tokio")]
+use ::tokio as tokio_runtime;
+#[cfg(feature = "tokio")]
+use std::sync::Arc;
 
 #[derive(Debug, Deserialize)]
 struct E2eFixture {
@@ -208,6 +223,95 @@ fn non_default_model_sets_run_rec_only_smoke() {
             "{model_set_name} produced unexpectedly low rec-only score: {}",
             output.lines[0].score
         );
+    }
+}
+
+#[test]
+#[ignore]
+fn cancellation_terminates_onnx_run_and_session_remains_reusable() {
+    let mut ocr = cancellable_detection_engine();
+    let cancellation = OcrCancellationToken::new();
+    let worker_cancellation = cancellation.clone();
+    let large_image = cancellation_stress_image();
+
+    let worker = thread::spawn(move || {
+        let result = ocr.run_image_cancellable_timed(&large_image, &worker_cancellation);
+        (ocr, result)
+    });
+    wait_for_active_onnx_run(&cancellation);
+    cancellation.cancel();
+
+    let (mut ocr, cancelled) = worker.join().unwrap();
+    let error = cancelled.unwrap_err();
+    assert!(is_cancelled_error(&error), "unexpected error: {error:#}");
+
+    let small_image = RgbImage::from_pixel(64, 64, Rgb([255, 255, 255]));
+    ocr.run_image(&small_image)
+        .expect("session should remain reusable after cancellation");
+}
+
+#[cfg(feature = "tokio")]
+#[tokio_runtime::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore]
+async fn tokio_timeout_cancels_onnx_run_and_worker_remains_reusable() {
+    let config = cancellable_detection_config();
+    let ocr = TokioRapidOcr::new(config).await.unwrap();
+    let large_image = Arc::new(cancellation_stress_image());
+
+    let error = ocr
+        .run_image_with_timeout(large_image, Duration::from_millis(25))
+        .await
+        .unwrap_err();
+    assert!(matches!(error, TokioOcrError::TimedOut(_)));
+
+    let small_image = Arc::new(RgbImage::from_pixel(64, 64, Rgb([255, 255, 255])));
+    ocr.run_image(small_image)
+        .await
+        .expect("Tokio worker should remain reusable after timeout");
+    ocr.shutdown().await.unwrap();
+}
+
+fn cancellable_detection_engine() -> RapidOcr {
+    RapidOcr::new(cancellable_detection_config()).unwrap()
+}
+
+fn cancellable_detection_config() -> RapidOcrConfig {
+    let rs_root = rapidocr_rs_root();
+    let model_dir = rs_root.join("models");
+    let cache = ModelCache::new(&model_dir);
+    let model_set = model_set_by_name("ppocrv5-ch-mobile").unwrap();
+    let pipeline = PipelineConfig::detection_only();
+    let missing = cache.missing_assets_for_pipeline(model_set, pipeline);
+    assert!(
+        missing.is_empty(),
+        "cancellation tests require missing assets under {}: {:?}",
+        model_dir.display(),
+        missing
+            .iter()
+            .map(|asset| asset.filename)
+            .collect::<Vec<_>>()
+    );
+    let mut config = cache.config_for(model_set);
+    config.pipeline = pipeline;
+    config.inference.intra_threads = 2;
+    config
+}
+
+fn cancellation_stress_image() -> RgbImage {
+    RgbImage::from_fn(2000, 2000, |x, y| {
+        let value = ((x.wrapping_mul(31) + y.wrapping_mul(17)) % 255) as u8;
+        Rgb([value, value.wrapping_add(53), value.wrapping_add(107)])
+    })
+}
+
+fn wait_for_active_onnx_run(cancellation: &OcrCancellationToken) {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !cancellation.has_active_onnx_run() {
+        assert!(
+            Instant::now() < deadline,
+            "timed out waiting for ONNX Runtime inference to start"
+        );
+        thread::sleep(Duration::from_millis(1));
     }
 }
 

@@ -5,6 +5,7 @@ use image::{imageops, RgbImage};
 use ndarray::{s, Array4, Ix2};
 
 use crate::{
+    cancellation::OcrCancellationToken,
     config::{ClsConfig, InferenceOptions},
     inference::OnnxSession,
     types::OcrTimings,
@@ -33,8 +34,13 @@ impl TextClassifier {
         Ok(Self { cfg, session })
     }
 
-    pub(crate) fn classify_timed(&mut self, imgs: &[RgbImage]) -> Result<ClassifyResult> {
+    pub(crate) fn classify_timed(
+        &mut self,
+        imgs: &[RgbImage],
+        cancellation: &OcrCancellationToken,
+    ) -> Result<ClassifyResult> {
         let mut timings = OcrTimings::default();
+        cancellation.checkpoint()?;
         if imgs.is_empty() {
             return Ok(ClassifyResult {
                 results: Vec::new(),
@@ -44,6 +50,7 @@ impl TextClassifier {
 
         let mut results = Vec::with_capacity(imgs.len());
         for chunk in imgs.chunks(self.cfg.batch_size) {
+            cancellation.checkpoint()?;
             let [channels, img_h, img_w] = self.cfg.image_shape;
             if channels != 3 {
                 bail!("only 3-channel classification input is supported");
@@ -52,18 +59,20 @@ impl TextClassifier {
             let start = Instant::now();
             let mut batch = Array4::<f32>::zeros((chunk.len(), channels, img_h, img_w));
             for (i, img) in chunk.iter().enumerate() {
+                cancellation.checkpoint()?;
                 let norm = self.resize_norm_img(img)?;
                 batch.slice_mut(s![i, .., .., ..]).assign(&norm);
             }
             timings.cls_preprocess_ms += elapsed_ms(start);
 
             let start = Instant::now();
-            let pred = self.session.run_f32(&batch)?;
+            let pred = self.session.run_f32(&batch, cancellation)?;
             timings.cls_inference_ms += elapsed_ms(start);
 
             let start = Instant::now();
             let pred = pred.into_dimensionality::<Ix2>()?;
             for row in pred.outer_iter() {
+                cancellation.checkpoint()?;
                 let (idx, score) = row
                     .iter()
                     .enumerate()
@@ -86,13 +95,15 @@ impl TextClassifier {
     pub(crate) fn classify_and_rotate_owned_timed(
         &mut self,
         mut imgs: Vec<RgbImage>,
+        cancellation: &OcrCancellationToken,
     ) -> Result<RotatedClassifyResult> {
         let ClassifyResult {
             results: cls,
             mut timings,
-        } = self.classify_timed(&imgs)?;
+        } = self.classify_timed(&imgs, cancellation)?;
         let start = Instant::now();
         for (img, cls) in imgs.iter_mut().zip(cls) {
+            cancellation.checkpoint()?;
             if cls.label.contains("180") && cls.score > self.cfg.thresh {
                 *img = imageops::rotate180(img);
             }

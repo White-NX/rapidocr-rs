@@ -1,6 +1,6 @@
 [package]
 name = "rapidocr-cli"
-version = "0.2.0"
+version = "0.2.1"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -16,7 +16,7 @@ directml = ["rapidocr-core/directml"]
 [dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
-rapidocr-core = { path = "../rapidocr-core", version = "0.2.0" }
+rapidocr-core = { path = "../rapidocr-core", version = "0.2.1" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 

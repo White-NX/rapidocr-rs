@@ -148,6 +148,20 @@ $env:RAPIDOCR_DB_FIXTURE_ROOT = "C:\path\to\rapidocr-rs\target\db_candidates"
 cargo test -p rapidocr-core db_postprocess -- --nocapture
 ```
 
+Cancellation and Tokio unit tests run with:
+
+```powershell
+cargo test -p rapidocr-core --all-features
+```
+
+With the registered local PP-OCRv5 Chinese mobile models available, exercise real ONNX Runtime
+termination and verify that the same Session/worker remains reusable after cancellation:
+
+```powershell
+cargo test -p rapidocr-core --all-features cancellation_terminates_onnx_run_and_session_remains_reusable -- --ignored --nocapture
+cargo test -p rapidocr-core --all-features tokio_timeout_cancels_onnx_run_and_worker_remains_reusable -- --ignored --nocapture
+```
+
 The test checks candidate count, center-distance drift, score drift, corner drift, and width/height drift against Python RapidOCR's `DBPostProcess` output. Fixtures may include local `tolerances` for documented geometry drift.
 
 ## End-to-End Golden Tests

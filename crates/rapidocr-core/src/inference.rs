@@ -6,7 +6,7 @@ use ort::{session::builder::GraphOptimizationLevel, session::Session, value::Ten
 
 #[cfg(feature = "directml")]
 use crate::config::ExecutionProvider;
-use crate::config::InferenceOptions;
+use crate::{cancellation::OcrCancellationToken, config::InferenceOptions};
 
 pub(crate) struct OnnxSession {
     session: Session,
@@ -60,14 +60,34 @@ impl OnnxSession {
         Ok(Self { session })
     }
 
-    pub(crate) fn run_f32(&mut self, input: &Array4<f32>) -> Result<ArrayD<f32>> {
-        let outputs = self
-            .session
-            .run(ort::inputs![TensorRef::from_array_view(input)?])
-            .map_err(|e| anyhow!(e.to_string()))?;
-        Ok(outputs[0]
-            .try_extract_array::<f32>()
-            .map_err(|e| anyhow!(e.to_string()))?
-            .to_owned())
+    pub(crate) fn run_f32(
+        &mut self,
+        input: &Array4<f32>,
+        cancellation: &OcrCancellationToken,
+    ) -> Result<ArrayD<f32>> {
+        cancellation.checkpoint()?;
+        let run_options = cancellation.begin_onnx_run()?;
+        let output = {
+            let outputs = self
+                .session
+                .run_with_options(
+                    ort::inputs![TensorRef::from_array_view(input)?],
+                    run_options.options(),
+                )
+                .map_err(|e| {
+                    if cancellation.is_cancelled() {
+                        crate::cancellation::OcrCancelled.into()
+                    } else {
+                        anyhow!(e.to_string())
+                    }
+                })?;
+            outputs[0]
+                .try_extract_array::<f32>()
+                .map_err(|e| anyhow!(e.to_string()))?
+                .to_owned()
+        };
+        drop(run_options);
+        cancellation.checkpoint()?;
+        Ok(output)
     }
 }

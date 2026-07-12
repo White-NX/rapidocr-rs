@@ -5,6 +5,7 @@ use image::{Rgb, RgbImage};
 use ndarray::{s, Array4, Ix3};
 
 use crate::{
+    cancellation::OcrCancellationToken,
     config::{InferenceOptions, RecConfig},
     inference::OnnxSession,
     types::{OcrTimings, RecText},
@@ -33,8 +34,13 @@ impl TextRecognizer {
         })
     }
 
-    pub(crate) fn recognize_timed(&mut self, imgs: &[RgbImage]) -> Result<RecognizeResult> {
+    pub(crate) fn recognize_timed(
+        &mut self,
+        imgs: &[RgbImage],
+        cancellation: &OcrCancellationToken,
+    ) -> Result<RecognizeResult> {
         let mut timings = OcrTimings::default();
+        cancellation.checkpoint()?;
         if imgs.is_empty() {
             return Ok(RecognizeResult {
                 texts: Vec::new(),
@@ -54,6 +60,7 @@ impl TextRecognizer {
 
         let mut results = (0..imgs.len()).map(|_| None).collect::<Vec<_>>();
         for chunk in indices.chunks(self.cfg.batch_size) {
+            cancellation.checkpoint()?;
             let max_wh_ratio = chunk
                 .iter()
                 .map(|idx| imgs[*idx].width() as f32 / imgs[*idx].height().max(1) as f32)
@@ -74,19 +81,21 @@ impl TextRecognizer {
 
             let start = Instant::now();
             for (i, idx) in chunk.iter().enumerate() {
+                cancellation.checkpoint()?;
                 let img = &imgs[*idx];
-                let norm = self.resize_norm_img(img, max_wh_ratio)?;
+                let norm = self.resize_norm_img(img, max_wh_ratio, cancellation)?;
                 batch.slice_mut(s![i, .., .., ..]).assign(&norm);
             }
             timings.rec_preprocess_ms += elapsed_ms(start);
 
             let start = Instant::now();
-            let pred = self.session.run_f32(&batch)?;
+            let pred = self.session.run_f32(&batch, cancellation)?;
             timings.rec_inference_ms += elapsed_ms(start);
 
             let start = Instant::now();
             let pred = pred.into_dimensionality::<Ix3>()?;
             for i in 0..pred.shape()[0] {
+                cancellation.checkpoint()?;
                 results[chunk[i]] = Some(self.decode_one(pred.slice(s![i, .., ..]))?);
             }
             timings.rec_decode_ms += elapsed_ms(start);
@@ -104,7 +113,12 @@ impl TextRecognizer {
         })
     }
 
-    fn resize_norm_img(&self, img: &RgbImage, max_wh_ratio: f32) -> Result<ndarray::Array3<f32>> {
+    fn resize_norm_img(
+        &self,
+        img: &RgbImage,
+        max_wh_ratio: f32,
+        cancellation: &OcrCancellationToken,
+    ) -> Result<ndarray::Array3<f32>> {
         let [channels, img_h, _] = self.cfg.image_shape;
         if channels != 3 {
             bail!("only 3-channel recognition input is supported");
@@ -112,7 +126,7 @@ impl TextRecognizer {
         let img_w = (img_h as f32 * max_wh_ratio) as usize;
         let ratio = img.width() as f32 / img.height().max(1) as f32;
         let resized_w = ((img_h as f32 * ratio).ceil() as usize).min(img_w).max(1);
-        let resized = resize_linear_opencv(img, resized_w as u32, img_h as u32);
+        let resized = resize_linear_opencv(img, resized_w as u32, img_h as u32, cancellation)?;
 
         let mut out = ndarray::Array3::<f32>::zeros((channels, img_h, img_w));
         for (x, y, pixel) in resized.enumerate_pixels() {
@@ -167,7 +181,12 @@ pub(crate) struct RecognizeResult {
     pub(crate) timings: OcrTimings,
 }
 
-fn resize_linear_opencv(img: &RgbImage, width: u32, height: u32) -> RgbImage {
+fn resize_linear_opencv(
+    img: &RgbImage,
+    width: u32,
+    height: u32,
+    cancellation: &OcrCancellationToken,
+) -> Result<RgbImage> {
     // Reimplement OpenCV-style bilinear resize for recognition preprocessing.
     // Small interpolation differences change OCR logits enough to matter in
     // parity fixtures, so this path avoids image crate sampling differences.
@@ -178,6 +197,9 @@ fn resize_linear_opencv(img: &RgbImage, width: u32, height: u32) -> RgbImage {
     let scale_y = src_h as f32 / height.max(1) as f32;
 
     for y in 0..height {
+        if y.is_multiple_of(16) {
+            cancellation.checkpoint()?;
+        }
         let (y0, y1, wy) = linear_bounds(y, scale_y, src_h);
         for x in 0..width {
             let (x0, x1, wx) = linear_bounds(x, scale_x, src_w);
@@ -196,7 +218,7 @@ fn resize_linear_opencv(img: &RgbImage, width: u32, height: u32) -> RgbImage {
         }
     }
 
-    out
+    Ok(out)
 }
 
 fn linear_bounds(dst: u32, scale: f32, src_len: u32) -> (u32, u32, f32) {

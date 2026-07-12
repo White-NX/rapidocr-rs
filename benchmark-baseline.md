@@ -50,3 +50,29 @@ Rust stage values come from `OcrTimings`. `det_ms` is the sum of pipeline prepro
 - Python DB postprocess time is not split from detection by the current RapidOCR timing surface.
 - Batch-size tuning is not covered. The current numbers exercise the configured cls/rec batch paths for a single image.
 - The benchmark script can write Markdown records with `--out`; curated baseline updates should stay in this file.
+
+## Tokio Convenience Overhead (0.2.1 Candidate)
+
+Recorded on 2026-07-12 with five local images, two measured passes, two warm-up images, PP-OCRv5
+Chinese mobile detection and recognition, classification disabled, two intra-op threads, one
+inter-op thread, and the CPU memory arena disabled. Image contents and OCR text were not included
+in the benchmark output.
+
+| metric | synchronous `RapidOcr` | `TokioRapidOcr` | Tokio delta |
+| --- | ---: | ---: | ---: |
+| completed inferences | 10/10 | 10/10 | 0 |
+| failures | 0 | 0 | 0 |
+| mean elapsed | 1751.633 ms | 1742.985 ms | -0.49% |
+| median elapsed | 1404.256 ms | 1399.381 ms | -0.35% |
+| maximum elapsed | 3980.149 ms | 3937.445 ms | -1.07% |
+| post-warmup RSS baseline | 153.5 MiB | 154.4 MiB | +0.9 MiB |
+| measured RSS peak | 333.6 MiB | 334.0 MiB | +0.35 MiB |
+| measured Private Bytes peak | 319.4 MiB | 318.1 MiB | -1.3 MiB |
+| peak threads | 22 | 25 | +3 |
+| peak handles | 137 | 148 | +11 |
+| output lines | 822 | 822 | 0 |
+
+The sample is too small to claim a speedup. It shows that the dedicated worker, bounded Tokio
+channel, and oneshot response add no measurable latency or memory regression at OCR-scale request
+durations. The expected persistent cost is three additional threads and eleven handles in this
+Windows run.
