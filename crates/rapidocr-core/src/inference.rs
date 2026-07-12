@@ -45,6 +45,14 @@ impl OnnxSession {
                 .map_err(|e| anyhow!(e.to_string()))?;
         }
 
+        if options.execution_provider == crate::config::ExecutionProvider::Cpu {
+            session_builder = session_builder
+                .with_execution_providers([ort::ep::CPU::default()
+                    .with_arena_allocator(options.enable_cpu_mem_arena)
+                    .build()])
+                .map_err(|e| anyhow!(e.to_string()))?;
+        }
+
         let session = session_builder
             .commit_from_file(model_path)
             .map_err(|e| anyhow!(e.to_string()))

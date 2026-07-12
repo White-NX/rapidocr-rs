@@ -68,6 +68,10 @@ const PPOCRV5_CH_DET_MOBILE_URL: &str =
     "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.0/onnx/PP-OCRv5/det/ch_PP-OCRv5_det_mobile.onnx";
 const PPOCRV5_CH_DET_MOBILE_SHA256: &str =
     "4d97c44a20d30a81aad087d6a396b08f786c4635742afc391f6621f5c6ae78ae";
+const PPOCRV5_CH_REC_MOBILE_URL: &str =
+    "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.0/onnx/PP-OCRv5/rec/ch_PP-OCRv5_rec_mobile.onnx";
+const PPOCRV5_CH_REC_MOBILE_SHA256: &str =
+    "5825fc7ebf84ae7a412be049820b4d86d77620f204a041697b0494669b1742c5";
 const PPOCRV5_CH_DET_SERVER_URL: &str =
     "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.0/onnx/PP-OCRv5/det/ch_PP-OCRv5_det_server.onnx";
 const PPOCRV5_CH_DET_SERVER_SHA256: &str =
@@ -387,6 +391,14 @@ const PPOCRV5_CH_REC_SERVER: ModelAssetSpec = ModelAssetSpec {
     sha256: Some(PPOCRV5_CH_REC_SERVER_SHA256),
 };
 
+const PPOCRV5_CH_REC_MOBILE: ModelAssetSpec = ModelAssetSpec {
+    name: "PP-OCRv5 Chinese mobile recognition model",
+    kind: ModelAssetKind::Recognition,
+    filename: "ch_PP-OCRv5_rec_mobile.onnx",
+    url: PPOCRV5_CH_REC_MOBILE_URL,
+    sha256: Some(PPOCRV5_CH_REC_MOBILE_SHA256),
+};
+
 const PPOCRV5_EN_REC_MOBILE: ModelAssetSpec = ModelAssetSpec {
     name: "PP-OCRv5 English mobile recognition model",
     kind: ModelAssetKind::Recognition,
@@ -525,6 +537,15 @@ pub const PPOCRV5_EN_MOBILE: ModelSetSpec = ModelSetSpec {
     rec: rec_with_assets(PPOCRV5_EN_REC_MOBILE, PPOCRV5_EN_DICT),
 };
 
+/// Registered PP-OCRv5 Chinese mobile model set.
+pub const PPOCRV5_CH_MOBILE: ModelSetSpec = ModelSetSpec {
+    name: "ppocrv5-ch-mobile",
+    family: "PP-OCRv5",
+    det: det_with_asset(PPOCRV5_CH_DET_MOBILE),
+    cls: PPOCRV5_CLS_PARAMS,
+    rec: rec_with_assets(PPOCRV5_CH_REC_MOBILE, PPOCRV5_DICT),
+};
+
 /// Registered PP-OCRv5 Chinese server model set.
 pub const PPOCRV5_CH_SERVER: ModelSetSpec = ModelSetSpec {
     name: "ppocrv5-ch-server",
@@ -534,11 +555,12 @@ pub const PPOCRV5_CH_SERVER: ModelSetSpec = ModelSetSpec {
     rec: rec_with_assets(PPOCRV5_CH_REC_SERVER, PPOCRV5_DICT),
 };
 
-static MODEL_SETS: [ModelSetSpec; 6] = [
+static MODEL_SETS: [ModelSetSpec; 7] = [
     PPOCRV6_SMALL,
     PPOCRV6_TINY,
     PPOCRV6_MEDIUM,
     PPOCRV4_EN_MOBILE,
+    PPOCRV5_CH_MOBILE,
     PPOCRV5_EN_MOBILE,
     PPOCRV5_CH_SERVER,
 ];
@@ -846,6 +868,7 @@ mod tests {
                 "ppocrv6-tiny",
                 "ppocrv6-medium",
                 "ppocrv4-en-mobile",
+                "ppocrv5-ch-mobile",
                 "ppocrv5-en-mobile",
                 "ppocrv5-ch-server"
             ]
