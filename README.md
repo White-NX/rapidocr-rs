@@ -143,12 +143,12 @@ The default local model directory is `models`, which is ignored by git.
 
 Model downloading is enabled by the default `model-download` Cargo feature. Applications that
 pre-populate model files can avoid the blocking `reqwest` dependency with
-`rapidocr-core = { version = "0.2.1", default-features = false }`.
+`rapidocr-core = { version = "0.2.2", default-features = false }`.
 
 On Windows, enable DirectML inference on a DirectX 12-capable GPU with:
 
 ```toml
-rapidocr-core = { version = "0.2.1", features = ["directml"] }
+rapidocr-core = { version = "0.2.2", features = ["directml"] }
 ```
 
 Select `ExecutionProvider::DirectMl` in `InferenceOptions` to use it. DirectML initialization is
@@ -172,7 +172,7 @@ recognition batches check the same token between bounded work units.
 Enable the optional Tokio convenience layer with:
 
 ```toml
-rapidocr-core = { version = "0.2.1", features = ["tokio"] }
+rapidocr-core = { version = "0.2.2", features = ["tokio"] }
 ```
 
 `TokioRapidOcr` owns a dedicated OCR worker thread and a bounded request queue,
