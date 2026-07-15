@@ -13,7 +13,11 @@ pub(crate) struct OnnxSession {
 }
 
 impl OnnxSession {
-    pub(crate) fn new(model_path: impl AsRef<Path>, options: InferenceOptions) -> Result<Self> {
+    pub(crate) fn new(
+        model_path: impl AsRef<Path>,
+        options: InferenceOptions,
+        dynamic_input_shape: bool,
+    ) -> Result<Self> {
         let model_path = model_path.as_ref();
         if !model_path.exists() {
             bail!(
@@ -34,13 +38,16 @@ impl OnnxSession {
             .with_inter_threads(options.inter_threads)
             .map_err(|e| anyhow!(e.to_string()))?
             .with_parallel_execution(options.parallel_execution)
+            .map_err(|e| anyhow!(e.to_string()))?
+            .with_memory_pattern(
+                !dynamic_input_shape
+                    && options.execution_provider != crate::config::ExecutionProvider::DirectMl,
+            )
             .map_err(|e| anyhow!(e.to_string()))?;
 
         #[cfg(feature = "directml")]
         if options.execution_provider == ExecutionProvider::DirectMl {
             session_builder = session_builder
-                .with_memory_pattern(false)
-                .map_err(|e| anyhow!(e.to_string()))?
                 .with_execution_providers([ort::ep::DirectML::default().build().error_on_failure()])
                 .map_err(|e| anyhow!(e.to_string()))?;
         }

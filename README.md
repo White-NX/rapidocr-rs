@@ -100,6 +100,35 @@ cargo run -p rapidocr-core --example library_usage -- path\to\image.png
 
 CLI examples are collected in [examples/cli_usage.ps1](examples/cli_usage.ps1).
 
+### Detector input limits
+
+Detection uses dynamic input shapes. A thin image can therefore request a much larger tensor when
+the detector expands its minimum side. The default configuration keeps this internal amplification
+bounded without changing ordinary desktop screenshots:
+
+```toml
+[det.input_limits]
+max_side_len = 4096
+max_pixels = 4194304
+overflow_behavior = "downscale"
+```
+
+`downscale` preserves aspect ratio and fits the detector input into both limits. Applications that
+must not silently reduce detection resolution can use `reject` and handle the returned error, for
+example by tiling the image. Applications that deliberately accept the memory and latency risk can
+use `allow`, which ignores both limits.
+
+Rust callers can make the opt-out especially explicit:
+
+```rust
+use rapidocr_core::config::DetInputLimits;
+
+let mut cfg = rapidocr_core::config::RapidOcrConfig::ppocr_v6_small("models");
+cfg.det.as_mut().unwrap().input_limits = DetInputLimits::unrestricted();
+```
+
+Older TOML files without `[det.input_limits]` remain compatible and receive the safe defaults.
+
 ## Model Assets
 
 The Rust crates do not bundle ONNX models or dictionaries. Model files are large, model choice depends on language and deployment requirements, and applications should make model distribution explicit.

@@ -20,7 +20,7 @@ pub(crate) struct TextRecognizer {
 impl TextRecognizer {
     pub(crate) fn new(cfg: RecConfig, inference: InferenceOptions) -> Result<Self> {
         cfg.validate().context("invalid recognition config")?;
-        let session = OnnxSession::new(&cfg.model_path, inference).with_context(|| {
+        let session = OnnxSession::new(&cfg.model_path, inference, false).with_context(|| {
             format!(
                 "failed to load recognition model {}",
                 cfg.model_path.display()

@@ -295,6 +295,9 @@ pub struct DetConfig {
     pub limit_side_len: u32,
     /// Whether [`DetConfig::limit_side_len`] applies to the minimum or maximum image side.
     pub limit_type: LimitType,
+    /// Resource policy applied to the detector tensor after the requested resize is calculated.
+    #[serde(default)]
+    pub input_limits: DetInputLimits,
     /// Per-channel input normalization mean in RGB order.
     pub mean: [f32; 3],
     /// Per-channel input normalization standard deviation in RGB order.
@@ -319,6 +322,7 @@ impl DetConfig {
             self.limit_side_len > 0,
             "det.limit_side_len must be greater than 0"
         );
+        self.input_limits.validate()?;
         ensure_finite_array(self.mean, "det.mean")?;
         ensure_finite_array(self.std, "det.std")?;
         for (idx, value) in self.std.iter().enumerate() {
@@ -346,6 +350,74 @@ pub enum LimitType {
     Min,
     /// Limit the maximum side.
     Max,
+}
+
+/// Resource limits for the dynamically shaped detection input tensor.
+///
+/// The safe default bounds both the longest side and total pixel count. Applications
+/// can reject oversized detector inputs or explicitly opt into unrestricted resizing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DetInputLimits {
+    /// Maximum detector input side after 32-pixel alignment, or no side limit.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_side_len: Option<u32>,
+    /// Maximum detector input pixel count after 32-pixel alignment, or no pixel limit.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_pixels: Option<u64>,
+    /// Behavior when the resize requested by [`DetConfig::limit_side_len`] exceeds a limit.
+    pub overflow_behavior: DetOverflowBehavior,
+}
+
+impl DetInputLimits {
+    /// Validates limits against the detector's required 32-pixel alignment.
+    pub fn validate(&self) -> Result<()> {
+        if let Some(max_side_len) = self.max_side_len {
+            ensure!(
+                max_side_len >= 32,
+                "det.input_limits.max_side_len must be at least 32"
+            );
+        }
+        if let Some(max_pixels) = self.max_pixels {
+            ensure!(
+                max_pixels >= 32 * 32,
+                "det.input_limits.max_pixels must be at least 1024"
+            );
+        }
+        Ok(())
+    }
+
+    /// Returns an explicit unrestricted policy for callers willing to accept resource risk.
+    pub const fn unrestricted() -> Self {
+        Self {
+            max_side_len: None,
+            max_pixels: None,
+            overflow_behavior: DetOverflowBehavior::Allow,
+        }
+    }
+}
+
+impl Default for DetInputLimits {
+    fn default() -> Self {
+        Self {
+            max_side_len: Some(4096),
+            max_pixels: Some(2048 * 2048),
+            overflow_behavior: DetOverflowBehavior::Downscale,
+        }
+    }
+}
+
+/// Behavior when detector preprocessing would exceed configured resource limits.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum DetOverflowBehavior {
+    /// Preserve the image aspect ratio while shrinking it into the configured limits.
+    #[default]
+    Downscale,
+    /// Return an error before allocating the oversized detector tensor.
+    Reject,
+    /// Ignore detector input limits and perform the requested resize.
+    Allow,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -459,6 +531,7 @@ mod tests {
         assert_eq!(loaded.min_height, 30);
         assert_eq!(loaded.width_height_ratio, 8.0);
         let det = loaded.det.as_ref().unwrap();
+        assert_eq!(det.input_limits, DetInputLimits::default());
         let cls = loaded.cls.as_ref().unwrap();
         let rec = loaded.rec.as_ref().unwrap();
         assert_eq!(
@@ -471,6 +544,29 @@ mod tests {
         );
         assert_eq!(rec.dict_path, PathBuf::from("models/ppocrv6_dict.txt"));
         assert_eq!(cls.labels, vec!["0", "180"]);
+    }
+
+    #[test]
+    fn config_without_detector_input_limits_uses_safe_defaults() {
+        let content = RapidOcrConfig::ppocr_v6_small("models")
+            .to_toml_string()
+            .unwrap();
+        let limits_section = "\n[det.input_limits]\nmax_side_len = 4096\nmax_pixels = 4194304\noverflow_behavior = \"downscale\"\n";
+        let content = content.replace(limits_section, "");
+
+        let loaded = RapidOcrConfig::from_toml_str(&content).unwrap();
+
+        assert_eq!(loaded.det.unwrap().input_limits, DetInputLimits::default());
+    }
+
+    #[test]
+    fn detector_input_limits_reject_values_below_alignment_minimum() {
+        let mut cfg = RapidOcrConfig::ppocr_v6_small("models");
+        cfg.det.as_mut().unwrap().input_limits.max_side_len = Some(31);
+
+        let error = cfg.validate().unwrap_err().to_string();
+
+        assert!(error.contains("det.input_limits.max_side_len must be at least 32"));
     }
 
     #[test]

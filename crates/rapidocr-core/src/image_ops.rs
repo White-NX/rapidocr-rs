@@ -8,7 +8,11 @@ use image::{
 use imageproc::geometric_transformations::{warp_into, Interpolation, Projection};
 use ndarray::Array4;
 
-use crate::{cancellation::OcrCancellationToken, types::Quad};
+use crate::{
+    cancellation::OcrCancellationToken,
+    config::{DetInputLimits, DetOverflowBehavior},
+    types::Quad,
+};
 
 pub(crate) fn load_rgb_image(path: impl AsRef<Path>) -> Result<RgbImage> {
     let path = path.as_ref();
@@ -148,9 +152,13 @@ pub(crate) fn resize_to_multiple_for_det(
     img: &RgbImage,
     limit_side_len: u32,
     limit_min_side: bool,
+    input_limits: &DetInputLimits,
 ) -> Result<RgbImage> {
     let (w, h) = img.dimensions();
-    let ratio = if limit_min_side {
+    if w == 0 || h == 0 {
+        bail!("detector input image must have non-zero dimensions");
+    }
+    let requested_ratio = if limit_min_side {
         if w.min(h) < limit_side_len {
             limit_side_len as f32 / w.min(h) as f32
         } else {
@@ -161,15 +169,79 @@ pub(crate) fn resize_to_multiple_for_det(
     } else {
         1.0
     };
+    let requested_dimensions = aligned_dimensions(w, h, requested_ratio, false);
+    let exceeds_limits = !dimensions_within_limits(requested_dimensions, input_limits);
 
-    let resize_w = round_to_multiple((w as f32 * ratio) as u32, 32).max(32);
-    let resize_h = round_to_multiple((h as f32 * ratio) as u32, 32).max(32);
+    let (resize_w, resize_h) = if !exceeds_limits
+        || input_limits.overflow_behavior == DetOverflowBehavior::Allow
+    {
+        requested_dimensions
+    } else if input_limits.overflow_behavior == DetOverflowBehavior::Reject {
+        let (requested_w, requested_h) = requested_dimensions;
+        bail!(
+            "detector resize requested {requested_w}x{requested_h} pixels, exceeding configured input limits (max_side_len={}, max_pixels={}); use downscale, raise the limits, or explicitly select allow",
+            display_optional_limit(input_limits.max_side_len.map(u64::from)),
+            display_optional_limit(input_limits.max_pixels),
+        );
+    } else {
+        fit_dimensions_within_limits(w, h, requested_ratio, input_limits)
+    };
     Ok(imageops::resize(
         img,
         resize_w,
         resize_h,
         imageops::FilterType::Triangle,
     ))
+}
+
+fn fit_dimensions_within_limits(
+    w: u32,
+    h: u32,
+    requested_ratio: f32,
+    limits: &DetInputLimits,
+) -> (u32, u32) {
+    // Alignment and the mandatory 32-pixel minimum make a purely analytical
+    // scale insufficient for very thin inputs. Binary search the largest
+    // aligned shape that satisfies both independent limits.
+    let mut low = 0.0_f32;
+    let mut high = requested_ratio;
+    let mut best = (32, 32);
+    for _ in 0..48 {
+        let mid = low + (high - low) / 2.0;
+        let dimensions = aligned_dimensions(w, h, mid, true);
+        if dimensions_within_limits(dimensions, limits) {
+            best = dimensions;
+            low = mid;
+        } else {
+            high = mid;
+        }
+    }
+    best
+}
+
+fn aligned_dimensions(w: u32, h: u32, ratio: f32, round_down: bool) -> (u32, u32) {
+    let align = if round_down {
+        floor_to_multiple
+    } else {
+        round_to_multiple
+    };
+    (
+        align((w as f32 * ratio) as u32, 32).max(32),
+        align((h as f32 * ratio) as u32, 32).max(32),
+    )
+}
+
+fn dimensions_within_limits((w, h): (u32, u32), limits: &DetInputLimits) -> bool {
+    limits
+        .max_side_len
+        .is_none_or(|max_side_len| w.max(h) <= max_side_len)
+        && limits
+            .max_pixels
+            .is_none_or(|max_pixels| u64::from(w) * u64::from(h) <= max_pixels)
+}
+
+fn display_optional_limit(limit: Option<u64>) -> String {
+    limit.map_or_else(|| "unlimited".to_owned(), |value| value.to_string())
 }
 
 pub(crate) fn rgb_to_nchw(
@@ -286,7 +358,11 @@ fn replicate_border(img: &RgbImage, pad: u32) -> RgbImage {
 }
 
 pub(crate) fn round_to_multiple(value: u32, divisor: u32) -> u32 {
-    ((value + divisor / 2) / divisor) * divisor
+    ((value.saturating_add(divisor / 2)) / divisor) * divisor
+}
+
+fn floor_to_multiple(value: u32, divisor: u32) -> u32 {
+    (value / divisor) * divisor
 }
 
 #[cfg(test)]
@@ -329,5 +405,75 @@ mod tests {
         assert_eq!(padded.get_pixel(0, 3).0, [7, 8, 9]);
         assert_eq!(padded.get_pixel(3, 3).0, [10, 11, 12]);
         assert_eq!(padded.get_pixel(2, 2).0, [10, 11, 12]);
+    }
+
+    #[test]
+    fn detector_min_side_resize_keeps_pathological_aspect_ratios_bounded() {
+        let image = RgbImage::new(32, 1984);
+
+        let resized =
+            resize_to_multiple_for_det(&image, 736, true, &DetInputLimits::default()).unwrap();
+
+        assert!(resized.width().min(resized.height()) < 736);
+        assert!(resized.width().max(resized.height()) <= 4096);
+        assert_eq!(resized.width() % 32, 0);
+        assert_eq!(resized.height() % 32, 0);
+    }
+
+    #[test]
+    fn detector_min_side_resize_preserves_normal_minimum_side_behavior() {
+        let image = RgbImage::new(640, 480);
+
+        let resized =
+            resize_to_multiple_for_det(&image, 736, true, &DetInputLimits::default()).unwrap();
+
+        assert_eq!(resized.dimensions(), (992, 736));
+    }
+
+    #[test]
+    fn detector_resize_rejects_limit_overflow_before_allocating_target() {
+        let image = RgbImage::new(640, 480);
+        let limits = DetInputLimits {
+            max_side_len: Some(512),
+            max_pixels: None,
+            overflow_behavior: DetOverflowBehavior::Reject,
+        };
+
+        let error = resize_to_multiple_for_det(&image, 736, true, &limits)
+            .unwrap_err()
+            .to_string();
+
+        assert!(error.contains("requested 992x736"));
+        assert!(error.contains("max_side_len=512"));
+    }
+
+    #[test]
+    fn detector_resize_allow_explicitly_ignores_limits() {
+        let image = RgbImage::new(640, 480);
+        let limits = DetInputLimits {
+            max_side_len: Some(512),
+            max_pixels: Some(32 * 32),
+            overflow_behavior: DetOverflowBehavior::Allow,
+        };
+
+        let resized = resize_to_multiple_for_det(&image, 736, true, &limits).unwrap();
+
+        assert_eq!(resized.dimensions(), (992, 736));
+    }
+
+    #[test]
+    fn detector_resize_enforces_pixel_only_limit_on_thin_input() {
+        let image = RgbImage::new(1, 200);
+        let limits = DetInputLimits {
+            max_side_len: None,
+            max_pixels: Some(32 * 320),
+            overflow_behavior: DetOverflowBehavior::Downscale,
+        };
+
+        let resized = resize_to_multiple_for_det(&image, 736, true, &limits).unwrap();
+
+        assert!(u64::from(resized.width()) * u64::from(resized.height()) <= 32 * 320);
+        assert_eq!(resized.width(), 32);
+        assert_eq!(resized.height() % 32, 0);
     }
 }

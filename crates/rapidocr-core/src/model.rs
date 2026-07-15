@@ -15,7 +15,9 @@ use std::io::Write;
 use anyhow::{bail, Context, Result};
 use sha2::{Digest, Sha256};
 
-use crate::config::{ClsConfig, DetConfig, LimitType, PipelineConfig, RapidOcrConfig, RecConfig};
+use crate::config::{
+    ClsConfig, DetConfig, DetInputLimits, LimitType, PipelineConfig, RapidOcrConfig, RecConfig,
+};
 
 const PPOCRV6_DET_SMALL_URL: &str =
     "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.0/onnx/PP-OCRv6/det/PP-OCRv6_det_small.onnx";
@@ -241,6 +243,7 @@ impl ModelSetSpec {
                 model_path: model_dir.join(self.det.asset.filename),
                 limit_side_len: self.det.limit_side_len,
                 limit_type: self.det.limit_type,
+                input_limits: DetInputLimits::default(),
                 mean: self.det.mean,
                 std: self.det.std,
                 thresh: self.det.thresh,

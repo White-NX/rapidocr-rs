@@ -28,6 +28,11 @@ max_candidates = 1000
 unclip_ratio = 1.6
 min_size = 3
 
+[det.input_limits]
+max_side_len = 4096
+max_pixels = 4194304
+overflow_behavior = "downscale"
+
 [cls]
 model_path = "models/ch_ppocr_mobile_v2.0_cls_mobile.onnx"
 image_shape = [3, 48, 192]

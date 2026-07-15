@@ -25,7 +25,7 @@ pub(crate) struct TextClassifier {
 impl TextClassifier {
     pub(crate) fn new(cfg: ClsConfig, inference: InferenceOptions) -> Result<Self> {
         cfg.validate().context("invalid classification config")?;
-        let session = OnnxSession::new(&cfg.model_path, inference).with_context(|| {
+        let session = OnnxSession::new(&cfg.model_path, inference, false).with_context(|| {
             format!(
                 "failed to load classification model {}",
                 cfg.model_path.display()

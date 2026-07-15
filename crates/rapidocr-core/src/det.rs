@@ -20,7 +20,7 @@ pub(crate) struct TextDetector {
 impl TextDetector {
     pub(crate) fn new(cfg: DetConfig, inference: InferenceOptions) -> Result<Self> {
         cfg.validate().context("invalid detection config")?;
-        let session = OnnxSession::new(&cfg.model_path, inference).with_context(|| {
+        let session = OnnxSession::new(&cfg.model_path, inference, true).with_context(|| {
             format!(
                 "failed to load detection model {}",
                 cfg.model_path.display()
@@ -50,6 +50,7 @@ impl TextDetector {
             img,
             self.cfg.limit_side_len,
             matches!(self.cfg.limit_type, LimitType::Min),
+            &self.cfg.input_limits,
         )?;
         let tensor = rgb_to_nchw(&input_img, self.cfg.mean, self.cfg.std, cancellation)?;
         timings.det_preprocess_ms = elapsed_ms(start);
