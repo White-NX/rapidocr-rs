@@ -23,7 +23,7 @@ struct Args {
     #[arg(short, long)]
     config: Option<PathBuf>,
 
-    /// Accept unknown TOML fields and let legacy top-level flags override [pipeline].
+    /// Accept unknown TOML fields and let legacy top-level flags override `[pipeline]`.
     #[arg(long, requires = "config")]
     config_compat: bool,
 
