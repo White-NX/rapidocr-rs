@@ -53,4 +53,15 @@ if __name__ == "__main__":
     prediction = np.array([[[0, 1, 0], [1, 0, 0]]])  # CTC: "A", then blank.
     write_model(root, "constant-rec.onnx", [1, 3, 48, "width"], prediction)
     write_model(root, "wrong-batch-rec.onnx", [1, 3, 48, "width"], np.repeat(prediction, 2, axis=0))
+    detection = np.zeros((1, 1, 64, 64))
+    detection[0, 0, 8:16, 28:60] = 0.91  # Wide top line.
+    detection[0, 0, 44:52, 4:20] = 0.75  # Narrow bottom line.
+    write_model(root, "scored-det.onnx", [1, 3, "height", "width"], detection)
+    write_model(root, "constant-cls.onnx", [1, 3, 48, 192], np.array([[0.1, 0.9]]))
+    write_model(
+        root, "paired-cls.onnx", [2, 3, 48, 192], np.array([[0.92, 0.08], [0.16, 0.84]])
+    )
+    # Recognition batches sort the narrow bottom crop before the wide top crop.
+    recognition = np.array([[[0, 0.96, 0], [1, 0, 0]], [[0, 0.2, 0], [1, 0, 0]]])
+    write_model(root, "paired-rec.onnx", [2, 3, 48, "width"], recognition)
     write_failing_recognition_model(root)

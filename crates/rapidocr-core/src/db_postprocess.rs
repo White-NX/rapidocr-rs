@@ -37,7 +37,6 @@ impl From<&DetConfig> for DbPostProcessConfig {
 #[derive(Debug, Clone)]
 pub(crate) struct DetCandidate {
     pub(crate) bbox: Quad,
-    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) score: f32,
 }
 

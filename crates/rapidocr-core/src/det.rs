@@ -3,11 +3,11 @@ use std::time::Instant;
 use crate::{
     cancellation::OcrCancellationToken,
     config::{DetConfig, InferenceOptions, LimitType},
-    db_postprocess::{DbPostProcess, DbPostProcessConfig},
+    db_postprocess::{DbPostProcess, DbPostProcessConfig, DetCandidate},
     error::{OcrResult as Result, ResultExt},
     image_ops::{resize_to_multiple_for_det, rgb_to_nchw},
     inference::OnnxSession,
-    types::{OcrTimings, Quad},
+    types::OcrTimings,
     OcrRuntime,
 };
 
@@ -71,20 +71,20 @@ impl TextDetector {
         timings.det_inference_ms = elapsed_ms(start);
 
         let start = Instant::now();
-        let boxes = self
-            .postprocess
-            .process_cancellable(pred, img.width(), img.height(), cancellation)?
-            .into_iter()
-            .map(|candidate| candidate.bbox)
-            .collect();
+        let candidates =
+            self.postprocess
+                .process_cancellable(pred, img.width(), img.height(), cancellation)?;
         timings.det_postprocess_ms = elapsed_ms(start);
 
-        Ok(DetectResult { boxes, timings })
+        Ok(DetectResult {
+            candidates,
+            timings,
+        })
     }
 }
 
 pub(crate) struct DetectResult {
-    pub(crate) boxes: Vec<Quad>,
+    pub(crate) candidates: Vec<DetCandidate>,
     pub(crate) timings: OcrTimings,
 }
 

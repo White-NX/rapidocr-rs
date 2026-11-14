@@ -62,6 +62,28 @@ cargo run -p rapidocr-cli -- --image path\to\image.png --model-dir models
 
 The runnable example is in [crates/rapidocr-core/examples/library_usage.rs](crates/rapidocr-core/examples/library_usage.rs)。
 
+## 结果分数与旋转信息
+
+`types::OcrLine` 分别返回各阶段的结果：
+
+| 字段 | 含义 |
+| --- | --- |
+| `score` | 平均识别置信度；关闭识别时为 `0.0`。 |
+| `detection_score` | 检测框扩张前的 DB 分数；关闭检测时为 `None`。 |
+| `rotation` | `OcrRotation` 包含分类标签 `label`、分类置信度 `score` 和实际旋转角度 `applied_degrees`；关闭分类时为 `None`。 |
+
+仅检测模式返回空文本及有效的 `detection_score`。即使分类标签为 `"180"`，
+置信度没有严格超过 `cls.thresh` 时，`applied_degrees` 仍为 `0`。
+该角度只记录方向分类额外施加的裁剪图旋转（`0` 或 `180` 度），不包含
+EXIF 方向校正或竖长检测框裁剪时的 90 度旋转。输出框仍使用原图坐标。
+识别批次重排和结果过滤后，这些信息仍与各自的检测框对应。
+JSON 中缺失阶段的结果为 `null`，也可继续读取不含新字段的旧 JSON。
+
+CLI 保留识别分数、文本、检测框三列，并为已运行的阶段追加带名称的
+`det_score`、`cls_label`、`cls_score` 与 `rotation`。
+
+从 `0.2.2` 升级的指引集中在 [v0.3.0 发布说明](https://github.com/White-NX/rapidocr-rs/releases/tag/v0.3.0)。
+
 ## 由应用部署运行时
 
 模型下载与 ONNX Runtime 二进制下载分别由 `model-download` 和 `download-binaries`

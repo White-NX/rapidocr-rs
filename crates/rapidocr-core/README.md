@@ -19,6 +19,17 @@ Public configuration, model-description, and OCR output types that may grow are
 `#[non_exhaustive]`. Construct them through their `new` methods, builders, or
 `Default` instead of downstream struct literals.
 
+`types::OcrLine::score` always means recognition confidence. Detection-only lines
+keep empty text and `score = 0.0`, but expose their DB box confidence through
+`detection_score: Option<f32>`. Classification returns `rotation: Option<OcrRotation>`
+with the winning `label`, classification `score`, and `applied_degrees` (`0` or `180`).
+A low-confidence `"180"` label is retained with zero applied rotation. The angle
+describes the classifier's additional crop rotation, excluding EXIF and tall-box
+crop orientation; output box coordinates are unaffected. Disabled stages have `None`
+metadata. `OcrLine::new` and `detection_only` start without metadata; use
+`with_detection_score` and `with_rotation` to attach it when constructing results.
+Serde accepts older JSON lines without the new fields and serializes absent metadata as `null`.
+
 Models are not bundled in the crate package. Applications should either let `ModelCache` download registered model assets, pre-populate a model directory during deployment, or provide explicit model paths in configuration.
 
 The default `model-download` feature enables the blocking HTTP downloader. Disable default

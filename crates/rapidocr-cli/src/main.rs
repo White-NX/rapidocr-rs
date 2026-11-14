@@ -200,7 +200,17 @@ fn main() -> Result<()> {
 
     if !args.quiet {
         for line in output.unwrap().lines {
-            println!("{:.5}\t{}\t{:?}", line.score, line.text, line.bbox.points);
+            print!("{:.5}\t{}\t{:?}", line.score, line.text, line.bbox.points);
+            if let Some(score) = line.detection_score {
+                print!("\tdet_score={score:.5}");
+            }
+            if let Some(rotation) = line.rotation {
+                print!(
+                    "\tcls_label={:?}\tcls_score={:.5}\trotation={}deg",
+                    rotation.label, rotation.score, rotation.applied_degrees
+                );
+            }
+            println!();
         }
     }
     Ok(())

@@ -98,7 +98,13 @@ use_cls = true
 use_rec = true
 ```
 
-`use_det = false` treats the input image as one recognition crop. `use_rec = false` runs detection only and returns boxes with empty text and score `0.0`. `use_cls = true` requires recognition because cls is only used to rotate recognition crops.
+`use_det = false` treats the input image as one recognition crop and leaves
+`detection_score = None`. `use_rec = false` runs detection only and returns boxes
+with empty text, recognition `score = 0.0`, and a populated `detection_score`.
+`use_cls = true` requires recognition and returns classification metadata in
+`rotation`, including the label, confidence, and additional rotation actually
+applied to the crop. A `"180"` label below or at the threshold retains its score
+but applies zero rotation. Disabled classification leaves `rotation = None`.
 
 ## Library API
 
@@ -271,12 +277,11 @@ The curated current baseline is recorded in [../benchmark-baseline.md](../benchm
 
 ## Release Compatibility
 
-The `0.3.0` release is the API compatibility boundary for the public struct and
-enum cleanup and the move from `anyhow::Result` to `OcrResult<T>` / `OcrError`.
-`TokioOcrError::Ocr` now contains `OcrError`, and `is_cancelled_error` accepts `&OcrError`.
-After this release, patch changes are checked in CI with
-`cargo-semver-checks`; public data types should be consumed through constructors,
-builders, `Default`, or exhaustive matches with a wildcard arm where appropriate.
+The [v0.3.0 release notes](https://github.com/White-NX/rapidocr-rs/releases/tag/v0.3.0)
+contain the migration guide from `0.2.2`, including the public API and error-type
+changes. Patch changes are checked in CI with `cargo-semver-checks`; public data
+types should be consumed through constructors, builders, `Default`, or exhaustive
+matches with a wildcard arm where appropriate.
 
 ## Error And Image Handling Notes
 

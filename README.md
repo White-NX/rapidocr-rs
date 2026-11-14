@@ -103,6 +103,27 @@ cargo run -p rapidocr-core --example library_usage -- path\to\image.png
 
 CLI examples are collected in [examples/cli_usage.ps1](examples/cli_usage.ps1).
 
+### Result scores and rotation
+
+Each `types::OcrLine` keeps stage results separate:
+
+| Field | Meaning |
+| --- | --- |
+| `score` | Mean recognition confidence; `0.0` when recognition is disabled. |
+| `detection_score` | Optional DB box confidence before expansion; `None` when detection is disabled. |
+| `rotation` | Optional `OcrRotation` containing the classifier's `label`, `score`, and `applied_degrees`; `None` when classification is disabled. |
+
+Detection-only results have empty text and a populated `detection_score`. A classifier
+label of `"180"` can have `applied_degrees = 0` when its confidence does not strictly
+exceed `cls.thresh`. The applied rotation describes the additional classifier crop
+rotation (`0` or `180` degrees), excluding EXIF orientation and the quarter-turn
+used for tall perspective crops. Output boxes stay in source-image coordinates.
+These fields remain attached to their boxes after recognition batching and filtering.
+JSON uses `null` for absent metadata and still accepts older lines without these fields.
+
+The CLI keeps its recognition-score, text, and box columns, then appends labeled
+`det_score`, `cls_label`, `cls_score`, and `rotation` values for enabled stages.
+
 ### Detector input limits
 
 Detection uses dynamic input shapes. A thin image can therefore request a much larger tensor when
@@ -354,8 +375,7 @@ Developer workflows, parity fixture generation, ignored test gates, local config
 
 Additional project notes:
 
-- [DESIGN_REVIEW.md](DESIGN_REVIEW.md) records the design audit, runtime integration changes, and consumer migration guidance.
-- [RELEASE_NOTES.md](RELEASE_NOTES.md) records the `0.3.0` API and reliability changes.
+- [v0.3.0 release notes](https://github.com/White-NX/rapidocr-rs/releases/tag/v0.3.0) cover release changes and migration from `0.2.2`.
 - [parity-gaps.md](parity-gaps.md) tracks known behavior differences from Python RapidOCR.
 - [benchmark-baseline.md](benchmark-baseline.md) records the curated benchmark baseline.
 

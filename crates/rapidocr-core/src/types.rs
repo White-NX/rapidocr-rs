@@ -174,6 +174,36 @@ pub(crate) struct RecText {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[non_exhaustive]
+/// Direction classification and the rotation applied to a recognition crop.
+///
+/// This describes the classifier's additional rotation after perspective
+/// cropping. It does not include EXIF orientation or the automatic quarter-turn
+/// used when cropping tall detected boxes, and does not change the output box.
+pub struct OcrRotation {
+    /// Winning classifier label, commonly `"0"` or `"180"`.
+    pub label: String,
+    /// Confidence of the winning classifier label, even below the rotation threshold.
+    pub score: f32,
+    /// Additional clockwise rotation actually applied to the crop, in degrees.
+    ///
+    /// The pipeline reports `180` when the label contains `"180"` and its score
+    /// strictly exceeds [`crate::config::ClsConfig::thresh`]; otherwise it reports `0`.
+    pub applied_degrees: u16,
+}
+
+impl OcrRotation {
+    /// Creates direction-classification metadata with the applied rotation.
+    pub fn new(label: impl Into<String>, score: f32, applied_degrees: u16) -> Self {
+        Self {
+            label: label.into(),
+            score,
+            applied_degrees,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
 /// One OCR result line.
 pub struct OcrLine {
     /// Detected or synthetic text box.
@@ -182,6 +212,17 @@ pub struct OcrLine {
     pub text: String,
     /// Mean recognition confidence. Detection-only output uses `0.0`.
     pub score: f32,
+    /// DB postprocessing confidence for the detected box, before box expansion.
+    ///
+    /// Available in detection-only and detection-plus-recognition output.
+    /// `None` means detection was disabled or no detection metadata was supplied.
+    #[serde(default)]
+    pub detection_score: Option<f32>,
+    /// Direction classification and the rotation applied before recognition.
+    ///
+    /// `None` means classification was disabled or no rotation metadata was supplied.
+    #[serde(default)]
+    pub rotation: Option<OcrRotation>,
 }
 
 impl OcrLine {
@@ -191,12 +232,28 @@ impl OcrLine {
             bbox,
             text: text.into(),
             score,
+            detection_score: None,
+            rotation: None,
         }
     }
 
-    /// Creates one detection-only OCR line with empty text and zero score.
+    /// Creates one detection-only OCR line with empty text and zero recognition score.
+    ///
+    /// Use [`OcrLine::with_detection_score`] to attach a detector confidence.
     pub fn detection_only(bbox: Quad) -> Self {
         Self::new(bbox, String::new(), 0.0)
+    }
+
+    /// Attaches the detector confidence without changing the recognition score.
+    pub fn with_detection_score(mut self, score: f32) -> Self {
+        self.detection_score = Some(score);
+        self
+    }
+
+    /// Attaches direction classification and applied rotation metadata.
+    pub fn with_rotation(mut self, rotation: OcrRotation) -> Self {
+        self.rotation = Some(rotation);
+        self
     }
 }
 

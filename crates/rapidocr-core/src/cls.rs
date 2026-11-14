@@ -8,7 +8,7 @@ use crate::{
     config::{ClsConfig, InferenceOptions},
     error::{OcrError, OcrResult as Result, ResultExt},
     inference::OnnxSession,
-    types::OcrTimings,
+    types::{OcrRotation, OcrTimings},
     OcrRuntime,
 };
 
@@ -131,14 +131,23 @@ impl TextClassifier {
             mut timings,
         } = self.classify_timed(&imgs, cancellation)?;
         let start = Instant::now();
+        let mut rotations = Vec::with_capacity(cls.len());
         for (img, cls) in imgs.iter_mut().zip(cls) {
             cancellation.checkpoint()?;
-            if cls.label.contains("180") && cls.score > self.cfg.thresh {
+            let applied_degrees = if cls.label.contains("180") && cls.score > self.cfg.thresh {
                 *img = imageops::rotate180(img);
-            }
+                180
+            } else {
+                0
+            };
+            rotations.push(OcrRotation::new(cls.label, cls.score, applied_degrees));
         }
         timings.cls_postprocess_ms += elapsed_ms(start);
-        Ok(RotatedClassifyResult { imgs, timings })
+        Ok(RotatedClassifyResult {
+            imgs,
+            rotations,
+            timings,
+        })
     }
 
     fn resize_norm_img(&self, img: &RgbImage) -> Result<ndarray::Array3<f32>> {
@@ -177,9 +186,47 @@ pub(crate) struct ClassifyResult {
 
 pub(crate) struct RotatedClassifyResult {
     pub(crate) imgs: Vec<RgbImage>,
+    pub(crate) rotations: Vec<OcrRotation>,
     pub(crate) timings: OcrTimings,
 }
 
 fn elapsed_ms(start: Instant) -> f64 {
     start.elapsed().as_secs_f64() * 1000.0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use image::Rgb;
+
+    #[test]
+    fn reported_rotation_matches_the_crop_transform() {
+        let image = RgbImage::from_fn(2, 2, |x, y| Rgb([(x + y * 2) as u8, 0, 0]));
+        for (threshold, label, expected_degrees) in
+            [(0.8, "180", 180), (0.9, "180", 0), (0.8, "0", 0)]
+        {
+            let config = ClsConfig::new(
+                std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("tests/fixtures/constant-cls.onnx"),
+                [3, 48, 192],
+                1,
+                threshold,
+                vec!["unused".into(), label.into()],
+            );
+            let mut classifier =
+                TextClassifier::new(config, InferenceOptions::default(), None).unwrap();
+            let result = classifier
+                .classify_and_rotate_owned_timed(vec![image.clone()], &OcrCancellationToken::new())
+                .unwrap();
+            assert_eq!(result.rotations[0].label, label);
+            assert_eq!(result.rotations[0].score, 0.9);
+            assert_eq!(result.rotations[0].applied_degrees, expected_degrees);
+            let expected = if expected_degrees == 180 {
+                imageops::rotate180(&image)
+            } else {
+                image.clone()
+            };
+            assert_eq!(result.imgs[0], expected);
+        }
+    }
 }

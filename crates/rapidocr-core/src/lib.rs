@@ -207,7 +207,9 @@ impl RapidOcr {
     ///
     /// With detection disabled, the whole input image is treated as one
     /// recognition crop. With recognition disabled, the output contains detected
-    /// boxes with empty text and score `0.0`.
+    /// boxes with empty text, recognition score `0.0`, and a separate
+    /// [`OcrLine::detection_score`]. [`OcrLine::rotation`] records classification
+    /// and the additional crop rotation when classification is enabled.
     pub fn run_image_timed(&mut self, image: &image::RgbImage) -> Result<TimedOcrOutput> {
         self.run_image_cancellable_timed(image, &OcrCancellationToken::new())
     }
@@ -230,11 +232,11 @@ impl RapidOcr {
 
         let detection_enabled = self.detector.is_some();
         let needs_recognition = self.recognizer.is_some();
-        let (boxes, crops) = if detection_enabled {
-            let (boxes, crops, det_timings) =
+        let (mut lines, crops) = if detection_enabled {
+            let (lines, crops, det_timings) =
                 self.detect_and_crop_timed(image, needs_recognition, cancellation)?;
             timings.add_assign(&det_timings);
-            (boxes, crops)
+            (lines, crops)
         } else {
             let bbox = Quad::from_xyxy(
                 0.0,
@@ -242,12 +244,11 @@ impl RapidOcr {
                 image.width().saturating_sub(1) as f32,
                 image.height().saturating_sub(1) as f32,
             );
-            (vec![bbox], vec![image.clone()])
+            (vec![OcrLine::detection_only(bbox)], vec![image.clone()])
         };
         cancellation.checkpoint()?;
 
         let Some(recognizer) = &mut self.recognizer else {
-            let lines = boxes.into_iter().map(OcrLine::detection_only).collect();
             timings.total_ms = elapsed_ms(total_start);
             return Ok(TimedOcrOutput::new(OcrOutput::new(lines), timings));
         };
@@ -255,6 +256,9 @@ impl RapidOcr {
         let crops = if let Some(classifier) = &mut self.classifier {
             let cls = classifier.classify_and_rotate_owned_timed(crops, cancellation)?;
             timings.add_assign(&cls.timings);
+            for (line, rotation) in lines.iter_mut().zip(cls.rotations) {
+                line.rotation = Some(rotation);
+            }
             cls.imgs
         } else {
             crops
@@ -264,17 +268,19 @@ impl RapidOcr {
 
         let start = Instant::now();
         cancellation.checkpoint()?;
-        let lines = boxes
+        let lines = lines
             .into_iter()
             .zip(rec.texts)
-            .filter_map(|(bbox, text)| {
+            .filter_map(|(mut line, text)| {
                 if text.text.trim().is_empty() {
                     return None;
                 }
                 if detection_enabled && text.score < self.cfg.text_score {
                     return None;
                 }
-                Some(OcrLine::new(bbox, text.text, text.score))
+                line.text = text.text;
+                line.score = text.score;
+                Some(line)
             })
             .collect();
         timings.output_filter_ms = elapsed_ms(start);
@@ -288,7 +294,7 @@ impl RapidOcr {
         image: &image::RgbImage,
         needs_crops: bool,
         cancellation: &OcrCancellationToken,
-    ) -> Result<(Vec<Quad>, Vec<image::RgbImage>, OcrTimings)> {
+    ) -> Result<(Vec<OcrLine>, Vec<image::RgbImage>, OcrTimings)> {
         let mut timings = OcrTimings::default();
         cancellation.checkpoint()?;
         let original_width = image.width();
@@ -307,25 +313,32 @@ impl RapidOcr {
             .ok_or_else(|| OcrError::invalid_config("detection stage is not enabled"))?;
         let det = detector.detect_timed(&det_image, cancellation)?;
         timings.add_assign(&det.timings);
-        let mut boxes = det.boxes;
+        let mut lines = det
+            .candidates
+            .into_iter()
+            .map(|candidate| {
+                OcrLine::detection_only(candidate.bbox).with_detection_score(candidate.score)
+            })
+            .collect::<Vec<_>>();
 
         let start = Instant::now();
         // Crops are extracted from the exact padded detector image that produced
         // the boxes. Only after crop generation do we remove padding and scale
         // coordinates back to the caller's original image space.
         let crops = if needs_crops {
-            let mut crops = Vec::with_capacity(boxes.len());
-            for bbox in &boxes {
+            let mut crops = Vec::with_capacity(lines.len());
+            for line in &lines {
                 cancellation.checkpoint()?;
-                crops.push(crop_perspective(&det_image, bbox)?);
+                crops.push(crop_perspective(&det_image, &line.bbox)?);
             }
             crops
         } else {
             Vec::new()
         };
 
-        for b in &mut boxes {
+        for line in &mut lines {
             cancellation.checkpoint()?;
+            let b = &mut line.bbox;
             if padding_top > 0 {
                 for point in &mut b.points {
                     point[1] -= padding_top as f32;
@@ -336,7 +349,7 @@ impl RapidOcr {
         }
         timings.crop_ms = elapsed_ms(start);
 
-        Ok((boxes, crops, timings))
+        Ok((lines, crops, timings))
     }
 }
 

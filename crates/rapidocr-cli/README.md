@@ -13,6 +13,13 @@ The binary is named `rapidocr` and can:
 - Disable pipeline stages with `--no-det`, `--no-cls`, and `--no-rec`.
 - Emit benchmark timing JSON with `--benchmark-json`.
 
+Each output row starts with recognition confidence, text, and box coordinates.
+Enabled stages append labeled `det_score`, `cls_label`, `cls_score`, and `rotation`
+values. In detection-only mode, text is empty and recognition confidence is `0.0`;
+use `det_score` for detection confidence. `rotation` is the additional classifier
+rotation actually applied to the crop (`0deg` or `180deg`), which can be `0deg`
+even when `cls_label` is `"180"` if the classification threshold was not exceeded.
+
 Models are not bundled in the crate package. Use `--model-dir` with the default download behavior, pass `--no-download` when models are pre-populated, or run from an explicit TOML config.
 
 `--config` rejects unknown fields and contradictory legacy/nested pipeline flags by

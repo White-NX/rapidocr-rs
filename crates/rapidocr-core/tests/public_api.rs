@@ -7,7 +7,7 @@ use rapidocr_core::{
         ClsModelSpec, DetModelSpec, ModelAssetKind, ModelAssetSpec, ModelDownloadMode,
         ModelSetSpec, RecModelSpec,
     },
-    types::{OcrLine, OcrOutput, OcrTimings, Quad, TimedOcrOutput},
+    types::{OcrLine, OcrOutput, OcrRotation, OcrTimings, Quad, TimedOcrOutput},
 };
 
 const DET_ASSET: ModelAssetSpec = ModelAssetSpec::new(
@@ -101,11 +101,42 @@ fn public_data_types_can_be_built_without_struct_literals() {
     assert_eq!(MODEL_SET.name, "test-model-set");
 
     let bbox = Quad::new([[0.0, 0.0], [10.0, 0.0], [10.0, 4.0], [0.0, 4.0]]);
-    let line = OcrLine::new(bbox, "text", 0.95);
+    let line = OcrLine::new(bbox, "text", 0.95)
+        .with_detection_score(0.85)
+        .with_rotation(OcrRotation::new("180", 0.99, 180));
     let output = OcrOutput::new(vec![line]);
     let timed = TimedOcrOutput::new(output, OcrTimings::default());
 
     assert_eq!(timed.output.lines[0].text, "text");
+}
+
+#[test]
+fn result_metadata_round_trips_and_legacy_json_remains_readable() {
+    let legacy = serde_json::json!({
+        "bbox": {"points": [[0, 0], [10, 0], [10, 4], [0, 4]]},
+        "text": "text",
+        "score": 0.95
+    });
+    let line: OcrLine = serde_json::from_value(legacy).unwrap();
+    assert!(line.detection_score.is_none());
+    assert!(line.rotation.is_none());
+    let value = serde_json::to_value(&line).unwrap();
+    assert!(value["detection_score"].is_null());
+    assert!(value["rotation"].is_null());
+
+    let line = line
+        .with_detection_score(0.85)
+        .with_rotation(OcrRotation::new("180", 0.9, 0));
+    let value = serde_json::to_value(&line).unwrap();
+    assert_eq!(value["rotation"]["label"], "180");
+    assert_eq!(value["rotation"]["applied_degrees"], 0);
+    let decoded: OcrLine = serde_json::from_value(value).unwrap();
+    assert_eq!(decoded.score, line.score);
+    assert_eq!(decoded.detection_score, line.detection_score);
+    let rotation = decoded.rotation.unwrap();
+    assert_eq!(rotation.label, "180");
+    assert_eq!(rotation.score, 0.9);
+    assert_eq!(rotation.applied_degrees, 0);
 }
 
 #[test]
