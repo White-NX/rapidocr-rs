@@ -2,7 +2,7 @@ mod common;
 
 use image::RgbImage;
 use ort::AsPointer;
-use rapidocr_core::{config::RecInputLimits, OcrRuntime, RapidOcr};
+use rapidocr_core::{config::RecInputLimits, ModelErrorKind, OcrError, OcrRuntime, RapidOcr};
 
 #[test]
 fn detection_and_recognition_sessions_share_the_default_environment() {
@@ -61,6 +61,13 @@ fn incompatible_dictionary_is_rejected_when_loading_the_model() {
         Err(error) => error,
     };
     assert!(format!("{error:#}").contains("output dimension 2 must be 4, got 3"));
+    assert!(matches!(
+        error,
+        OcrError::Model {
+            kind: ModelErrorKind::Incompatible,
+            ..
+        }
+    ));
 }
 
 #[test]
@@ -68,6 +75,13 @@ fn invalid_model_batch_returns_an_error_instead_of_indexing_past_crops() {
     let mut ocr = RapidOcr::new(common::recognition_config("wrong-batch-rec.onnx")).unwrap();
     let error = ocr.run_image(&RgbImage::new(320, 48)).unwrap_err();
     assert!(format!("{error:#}").contains("output batch size must match input batch size 1, got 2"));
+    assert!(matches!(
+        error,
+        OcrError::Model {
+            kind: ModelErrorKind::Incompatible,
+            ..
+        }
+    ));
 }
 
 #[test]

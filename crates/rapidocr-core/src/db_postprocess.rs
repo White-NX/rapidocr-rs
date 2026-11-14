@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 
-use anyhow::Result;
+use crate::error::{OcrError, OcrResult as Result};
 use ndarray::{ArrayD, Ix4};
 
 use crate::{
@@ -68,7 +68,9 @@ impl DbPostProcess {
         cancellation: &OcrCancellationToken,
     ) -> Result<Vec<DetCandidate>> {
         cancellation.checkpoint()?;
-        let pred = pred.into_dimensionality::<Ix4>()?;
+        let pred = pred.into_dimensionality::<Ix4>().map_err(|source| {
+            OcrError::incompatible_model("detection output must have rank 4").with_source(source)
+        })?;
         let map_h = pred.shape()[2];
         let map_w = pred.shape()[3];
         // Python RapidOCR dilates the threshold mask before contour extraction.

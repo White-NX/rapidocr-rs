@@ -12,7 +12,6 @@ use std::{
 };
 
 use ::tokio as tokio_runtime;
-use anyhow::{anyhow, Result as AnyResult};
 use image::RgbImage;
 use thiserror::Error;
 use tokio_runtime::sync::{mpsc, oneshot};
@@ -21,7 +20,7 @@ use crate::{
     cancellation::{is_cancelled_error, OcrCancellationToken, OcrCancelled},
     config::RapidOcrConfig,
     types::TimedOcrOutput,
-    OcrRuntime, RapidOcr,
+    OcrError, OcrResult, OcrRuntime, RapidOcr, RuntimeErrorKind,
 };
 
 const DEFAULT_QUEUE_CAPACITY: usize = 1;
@@ -47,12 +46,15 @@ pub enum TokioOcrError {
     TimedOut(Duration),
     /// OCR initialization or execution failed.
     #[error(transparent)]
-    Ocr(#[from] anyhow::Error),
+    Ocr(#[from] OcrError),
 }
 
-#[derive(Debug, Error)]
-#[error("Tokio OCR worker thread panicked")]
-struct WorkerPanic;
+fn worker_panic_error() -> OcrError {
+    OcrError::runtime(
+        RuntimeErrorKind::WorkerPanic,
+        "Tokio OCR worker thread panicked",
+    )
+}
 
 enum WorkerInput {
     Image(Arc<RgbImage>),
@@ -62,7 +64,7 @@ enum WorkerInput {
 struct WorkerRequest {
     input: WorkerInput,
     cancellation: OcrCancellationToken,
-    response: oneshot::Sender<AnyResult<TimedOcrOutput>>,
+    response: oneshot::Sender<OcrResult<TimedOcrOutput>>,
 }
 
 #[derive(Default)]
@@ -163,8 +165,8 @@ impl TokioRapidOcr {
         runtime: Option<OcrRuntime>,
     ) -> Result<Self, TokioOcrError> {
         if queue_capacity == 0 {
-            return Err(TokioOcrError::Ocr(anyhow!(
-                "Tokio OCR queue capacity must be greater than zero"
+            return Err(TokioOcrError::Ocr(OcrError::invalid_config(
+                "Tokio OCR queue capacity must be greater than zero",
             )));
         }
 
@@ -175,7 +177,15 @@ impl TokioRapidOcr {
         let worker = thread::Builder::new()
             .name("rapidocr-tokio-worker".to_string())
             .spawn(move || worker_main(config, runtime, receiver, worker_state, init_sender))
-            .map_err(|error| TokioOcrError::Ocr(error.into()))?;
+            .map_err(|source| {
+                TokioOcrError::Ocr(
+                    OcrError::runtime(
+                        RuntimeErrorKind::WorkerSpawn,
+                        "failed to spawn Tokio OCR worker",
+                    )
+                    .with_source(source),
+                )
+            })?;
 
         match init_receiver.await {
             Ok(Ok(())) => Ok(Self {
@@ -307,7 +317,7 @@ impl Drop for TokioRapidOcr {
 /// wait until the worker has finished cleaning up.
 pub struct OcrTask<T> {
     cancellation: OcrCancellationToken,
-    receiver: Option<oneshot::Receiver<AnyResult<T>>>,
+    receiver: Option<oneshot::Receiver<OcrResult<T>>>,
     completed: bool,
 }
 
@@ -370,14 +380,15 @@ impl<T> Drop for OcrTask<T> {
 }
 
 fn map_response<T>(
-    response: Result<AnyResult<T>, oneshot::error::RecvError>,
+    response: Result<OcrResult<T>, oneshot::error::RecvError>,
 ) -> Result<T, TokioOcrError> {
     match response {
         Ok(Ok(value)) => Ok(value),
         Ok(Err(error)) if is_cancelled_error(&error) => Err(TokioOcrError::Cancelled),
-        Ok(Err(error)) if error.downcast_ref::<WorkerPanic>().is_some() => {
-            Err(TokioOcrError::WorkerPanicked)
-        }
+        Ok(Err(OcrError::Runtime {
+            kind: RuntimeErrorKind::WorkerPanic,
+            ..
+        })) => Err(TokioOcrError::WorkerPanicked),
         Ok(Err(error)) => Err(TokioOcrError::Ocr(error)),
         Err(_) => Err(TokioOcrError::WorkerStopped),
     }
@@ -388,7 +399,7 @@ fn worker_main(
     runtime: Option<OcrRuntime>,
     mut receiver: mpsc::Receiver<WorkerRequest>,
     state: Arc<WorkerState>,
-    init_sender: oneshot::Sender<AnyResult<()>>,
+    init_sender: oneshot::Sender<OcrResult<()>>,
 ) {
     let initialized = match runtime {
         Some(runtime) => RapidOcr::new_with_runtime(config, &runtime),
@@ -429,7 +440,7 @@ fn worker_main(
                 let _ = request.response.send(result);
             }
             Err(_) => {
-                let _ = request.response.send(Err(WorkerPanic.into()));
+                let _ = request.response.send(Err(worker_panic_error()));
                 state.begin_shutdown();
                 break;
             }
@@ -452,7 +463,7 @@ mod tests {
 
     fn pending_task() -> (
         OcrTask<()>,
-        oneshot::Sender<AnyResult<()>>,
+        oneshot::Sender<OcrResult<()>>,
         OcrCancellationToken,
     ) {
         let cancellation = OcrCancellationToken::new();
@@ -510,7 +521,7 @@ mod tests {
     #[tokio_runtime::test]
     async fn worker_panic_marker_is_reported_as_worker_panicked() {
         let (task, sender, _observed) = pending_task();
-        let _ = sender.send(Err(WorkerPanic.into()));
+        let _ = sender.send(Err(worker_panic_error()));
 
         let error = task.wait().await.unwrap_err();
 

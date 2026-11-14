@@ -1,6 +1,5 @@
 use std::{borrow::Cow, path::Path};
 
-use anyhow::{bail, Context, Result};
 use image::{
     imageops, metadata::Orientation, DynamicImage, ImageBuffer, ImageDecoder, ImageReader, Rgb,
     RgbImage, RgbaImage,
@@ -11,26 +10,79 @@ use ndarray::Array4;
 use crate::{
     cancellation::OcrCancellationToken,
     config::{DetInputLimits, DetOverflowBehavior},
+    error::{InputLimitKind, OcrError, OcrResult as Result, OcrStage},
     types::Quad,
 };
 
 pub(crate) fn load_rgb_image(path: impl AsRef<Path>) -> Result<RgbImage> {
     let path = path.as_ref();
-    if !path.exists() {
-        bail!("image file not found at {}", path.display());
-    }
-    if !path.is_file() {
-        bail!("image path is not a file: {}", path.display());
+    let metadata = std::fs::metadata(path).map_err(|source| {
+        let message = if source.kind() == std::io::ErrorKind::NotFound {
+            format!("image file not found at {}", path.display())
+        } else {
+            format!("failed to inspect image {}", path.display())
+        };
+        OcrError::invalid_input(Some(path), message).with_source(source)
+    })?;
+    if !metadata.is_file() {
+        return Err(OcrError::invalid_input(
+            Some(path),
+            format!("image path is not a file: {}", path.display()),
+        ));
     }
     let mut decoder = ImageReader::open(path)
-        .with_context(|| format!("failed to open image {}", path.display()))?
+        .map_err(|source| {
+            OcrError::invalid_input(
+                Some(path),
+                format!("failed to open image {}", path.display()),
+            )
+            .with_source(source)
+        })?
         .into_decoder()
-        .with_context(|| format!("failed to decode image {}", path.display()))?;
+        .map_err(|source| image_decode_error(path, source))?;
+    // Match ImageReader::decode's allocation policy even though we keep the
+    // decoder to read EXIF orientation before constructing the DynamicImage.
+    let decoded_bytes = decoder.total_bytes();
+    let mut decode_limits = image::Limits::default();
+    let allocation_limit = decode_limits.max_alloc;
+    decode_limits.reserve(decoded_bytes).map_err(|source| {
+        OcrError::input_limit(
+            OcrStage::Preprocessing,
+            InputLimitKind::ImageBytes,
+            Some(decoded_bytes),
+            allocation_limit,
+            format!("decoded image {} requires {decoded_bytes} bytes, exceeding the image decoder allocation limit", path.display()),
+        ).with_source(source)
+    })?;
     let orientation = decoder.orientation().unwrap_or(Orientation::NoTransforms);
     let mut image = image::DynamicImage::from_decoder(decoder)
-        .with_context(|| format!("failed to decode image {}", path.display()))?;
+        .map_err(|source| image_decode_error(path, source))?;
     image.apply_orientation(orientation);
     Ok(to_rgb_with_alpha_background(&image))
+}
+
+fn image_decode_error(path: &Path, source: image::ImageError) -> OcrError {
+    let message = format!("failed to decode image {}", path.display());
+    let error = if let image::ImageError::Limits(limits) = &source {
+        let kind = match limits.kind() {
+            image::error::LimitErrorKind::InsufficientMemory => InputLimitKind::ImageBytes,
+            _ => InputLimitKind::Dimensions,
+        };
+        OcrError::input_limit(OcrStage::Preprocessing, kind, None, None, message)
+    } else {
+        OcrError::invalid_input(Some(path), message)
+    };
+    error.with_source(source)
+}
+
+fn padding_dimension_error(message: &str) -> OcrError {
+    OcrError::input_limit(
+        OcrStage::Preprocessing,
+        InputLimitKind::Dimensions,
+        None,
+        Some(u64::from(u32::MAX)),
+        message,
+    )
 }
 
 fn to_rgb_with_alpha_background(image: &DynamicImage) -> RgbImage {
@@ -118,7 +170,10 @@ pub(crate) fn resize_image_within_bounds(
 
     let (new_w, new_h) = current.dimensions();
     if new_w == 0 || new_h == 0 {
-        bail!("resized image has zero dimension");
+        return Err(OcrError::invalid_input(
+            None,
+            "resized image has zero dimension",
+        ));
     }
     Ok((
         current,
@@ -140,7 +195,9 @@ pub(crate) fn apply_vertical_padding(
     }
 
     if width_height_ratio <= 0.0 && width_height_ratio != -1.0 {
-        bail!("width_height_ratio must be positive or -1");
+        return Err(OcrError::invalid_config(
+            "width_height_ratio must be positive or -1",
+        ));
     }
 
     // RapidOCR pads very short or very wide images before detection to avoid
@@ -151,18 +208,17 @@ pub(crate) fn apply_vertical_padding(
     } else {
         (w as f32 / width_height_ratio) as u32
     };
-    let new_h = base_h
-        .max(min_height)
-        .checked_mul(2)
-        .context("vertical padding height exceeds image dimension limits")?;
+    let new_h = base_h.max(min_height).checked_mul(2).ok_or_else(|| {
+        padding_dimension_error("vertical padding height exceeds image dimension limits")
+    })?;
     let padding_h = new_h.abs_diff(h) / 2;
     let padded_h = h
-        .checked_add(
-            padding_h
-                .checked_mul(2)
-                .context("vertical padding height exceeds image dimension limits")?,
-        )
-        .context("padded image height exceeds image dimension limits")?;
+        .checked_add(padding_h.checked_mul(2).ok_or_else(|| {
+            padding_dimension_error("vertical padding height exceeds image dimension limits")
+        })?)
+        .ok_or_else(|| {
+            padding_dimension_error("padded image height exceeds image dimension limits")
+        })?;
     let mut out = ImageBuffer::from_pixel(w, padded_h, Rgb([0, 0, 0]));
     imageops::replace(&mut out, img, 0, padding_h as i64);
     Ok((Cow::Owned(out), padding_h))
@@ -176,7 +232,10 @@ pub(crate) fn resize_to_multiple_for_det(
 ) -> Result<RgbImage> {
     let (w, h) = img.dimensions();
     if w == 0 || h == 0 {
-        bail!("detector input image must have non-zero dimensions");
+        return Err(OcrError::invalid_input(
+            None,
+            "detector input image must have non-zero dimensions",
+        ));
     }
     let requested_ratio = if limit_min_side {
         if w.min(h) < limit_side_len {
@@ -198,11 +257,27 @@ pub(crate) fn resize_to_multiple_for_det(
         requested_dimensions
     } else if input_limits.overflow_behavior == DetOverflowBehavior::Reject {
         let (requested_w, requested_h) = requested_dimensions;
-        bail!(
+        let (kind, requested, limit) = if let Some(max_side) = input_limits
+            .max_side_len
+            .filter(|limit| requested_w.max(requested_h) > *limit)
+        {
+            (
+                InputLimitKind::SideLength,
+                u64::from(requested_w.max(requested_h)),
+                Some(u64::from(max_side)),
+            )
+        } else {
+            (
+                InputLimitKind::PixelCount,
+                u64::from(requested_w) * u64::from(requested_h),
+                input_limits.max_pixels,
+            )
+        };
+        return Err(OcrError::input_limit(OcrStage::Detection, kind, Some(requested), limit, format!(
             "detector resize requested {requested_w}x{requested_h} pixels, exceeding configured input limits (max_side_len={}, max_pixels={}); use downscale, raise the limits, or explicitly select allow",
             display_optional_limit(input_limits.max_side_len.map(u64::from)),
             display_optional_limit(input_limits.max_pixels),
-        );
+        )));
     } else {
         fit_dimensions_within_limits(w, h, requested_ratio, input_limits)
     };
@@ -291,7 +366,7 @@ pub(crate) fn crop_axis_aligned(img: &RgbImage, bbox: &Quad) -> Result<RgbImage>
     x1 = x1.min(w);
     y1 = y1.min(h);
     if x1 <= x0 || y1 <= y0 {
-        bail!("invalid crop bounds");
+        return Err(OcrError::invalid_input(None, "invalid crop bounds"));
     }
     Ok(imageops::crop_imm(img, x0, y0, x1 - x0, y1 - y0).to_image())
 }
@@ -317,7 +392,10 @@ fn crop_perspective_ordered(img: &RgbImage, bbox: &Quad) -> Result<RgbImage> {
     let crop_w = bbox.crop_width();
     let crop_h = bbox.crop_height();
     if crop_w == 0 || crop_h == 0 {
-        bail!("invalid perspective crop size");
+        return Err(OcrError::invalid_input(
+            None,
+            "invalid perspective crop size",
+        ));
     }
 
     let from = [
@@ -473,14 +551,27 @@ mod tests {
     #[test]
     fn detector_resize_rejects_limit_overflow_before_allocating_target() {
         let image = RgbImage::new(640, 480);
-        let limits = DetInputLimits::new(Some(512), None, DetOverflowBehavior::Reject);
-
-        let error = resize_to_multiple_for_det(&image, 736, true, &limits)
-            .unwrap_err()
-            .to_string();
-
-        assert!(error.contains("requested 992x736"));
-        assert!(error.contains("max_side_len=512"));
+        for (limits, expected_kind, expected_request, expected_limit) in [
+            (
+                DetInputLimits::new(Some(512), None, DetOverflowBehavior::Reject),
+                InputLimitKind::SideLength,
+                992,
+                512,
+            ),
+            (
+                DetInputLimits::new(None, Some(1024), DetOverflowBehavior::Reject),
+                InputLimitKind::PixelCount,
+                992 * 736,
+                1024,
+            ),
+        ] {
+            let error = resize_to_multiple_for_det(&image, 736, true, &limits).unwrap_err();
+            assert!(error.to_string().contains("requested 992x736"));
+            assert!(
+                matches!(error, OcrError::InputLimit { stage: OcrStage::Detection, kind, requested: Some(requested), limit: Some(limit), .. }
+                if kind == expected_kind && requested == expected_request && limit == expected_limit)
+            );
+        }
     }
 
     #[test]

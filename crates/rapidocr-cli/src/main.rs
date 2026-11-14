@@ -1,9 +1,11 @@
 use std::{path::PathBuf, time::Instant};
 
 use anyhow::Result;
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use rapidocr_core::{
-    config::{ExecutionProvider, RapidOcrConfig},
+    config::{
+        ConfigLoadOptions, ConfigParseMode, ExecutionProvider, ModelPathBase, RapidOcrConfig,
+    },
     model::{
         available_model_set_names, model_set_by_name, ModelCache, ModelDownloadMode, ModelSetSpec,
         DEFAULT_MODEL_SET_NAME,
@@ -20,6 +22,18 @@ struct Args {
 
     #[arg(short, long)]
     config: Option<PathBuf>,
+
+    /// Accept unknown TOML fields and let legacy top-level flags override [pipeline].
+    #[arg(long, requires = "config")]
+    config_compat: bool,
+
+    /// Base for relative model/dictionary paths in --config (cwd preserves existing configs).
+    #[arg(long, value_enum, default_value_t = ConfigPathBase::Cwd, conflicts_with = "config_base_dir")]
+    config_path_base: ConfigPathBase,
+
+    /// Explicit base directory for model/dictionary paths in --config.
+    #[arg(long, requires = "config")]
+    config_base_dir: Option<PathBuf>,
 
     #[arg(long, default_value = "models")]
     model_dir: PathBuf,
@@ -59,6 +73,34 @@ struct Args {
     benchmark_json: bool,
 }
 
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum ConfigPathBase {
+    Cwd,
+    Config,
+}
+
+fn load_config(path: &std::path::Path, args: &Args) -> rapidocr_core::OcrResult<RapidOcrConfig> {
+    let parse_mode = if args.config_compat {
+        ConfigParseMode::Compatible
+    } else {
+        ConfigParseMode::Strict
+    };
+    let path_base = match &args.config_base_dir {
+        Some(base) => ModelPathBase::Directory(base.clone()),
+        None => match args.config_path_base {
+            ConfigPathBase::Cwd if args.config_compat => ModelPathBase::AsProvided,
+            ConfigPathBase::Cwd => ModelPathBase::WorkingDirectory,
+            ConfigPathBase::Config => ModelPathBase::ConfigDirectory,
+        },
+    };
+    RapidOcrConfig::from_toml_file_with_options(
+        path,
+        &ConfigLoadOptions::new()
+            .with_parse_mode(parse_mode)
+            .with_model_path_base(path_base),
+    )
+}
+
 fn main() -> Result<()> {
     let args = Args::parse();
 
@@ -76,7 +118,7 @@ fn main() -> Result<()> {
     })?;
 
     let mut cfg = if let Some(config_path) = &args.config {
-        RapidOcrConfig::from_toml_file(config_path)?
+        load_config(config_path, &args)?
     } else {
         let cache = ModelCache::new(&args.model_dir);
         let mode = if args.no_download {
@@ -212,6 +254,138 @@ fn apply_overrides(cfg: &mut RapidOcrConfig, args: &Args) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::{
+        fs,
+        io::Write,
+        sync::atomic::{AtomicU64, Ordering},
+    };
+
+    static NEXT_CONFIG: AtomicU64 = AtomicU64::new(0);
+
+    struct TestConfig(PathBuf);
+
+    impl TestConfig {
+        fn new(prefix: &str) -> Self {
+            let text = format!(
+                "{prefix}{}",
+                RapidOcrConfig::ppocr_v6_small("models")
+                    .to_toml_string()
+                    .unwrap()
+            );
+            loop {
+                let id = NEXT_CONFIG.fetch_add(1, Ordering::Relaxed);
+                let path = std::env::temp_dir().join(format!(
+                    "rapidocr-cli-config-{}-{id}.toml",
+                    std::process::id()
+                ));
+                match fs::OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .open(&path)
+                {
+                    Ok(mut file) => {
+                        file.write_all(text.as_bytes()).unwrap();
+                        return Self(path);
+                    }
+                    Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                    Err(error) => panic!("failed to create config fixture: {error}"),
+                }
+            }
+        }
+    }
+
+    impl Drop for TestConfig {
+        fn drop(&mut self) {
+            let _ = fs::remove_file(&self.0);
+        }
+    }
+
+    #[test]
+    fn config_is_strict_by_default_and_compat_flag_restores_legacy_overrides() {
+        let config = TestConfig::new("extension = true\nuse_det = false\n");
+        let path = config.0.to_str().unwrap();
+        let strict = Args::try_parse_from(["rapidocr", "--config", path]).unwrap();
+        let error = load_config(&config.0, &strict).unwrap_err();
+        assert!(matches!(
+            error,
+            rapidocr_core::OcrError::Config {
+                kind: rapidocr_core::ConfigErrorKind::UnknownField,
+                ..
+            }
+        ));
+        let compat =
+            Args::try_parse_from(["rapidocr", "--config", path, "--config-compat"]).unwrap();
+        assert!(!load_config(&config.0, &compat).unwrap().pipeline.use_det);
+    }
+
+    #[test]
+    fn config_compat_preserves_paths_and_unused_empty_stage_paths() {
+        let config = TestConfig::new("use_det = false\n");
+        let mut parsed = RapidOcrConfig::from_toml_file(&config.0).unwrap();
+        parsed.det.as_mut().unwrap().model_path = PathBuf::new();
+        parsed.write_toml_file(&config.0).unwrap();
+        let path = config.0.to_str().unwrap();
+        let compat =
+            Args::try_parse_from(["rapidocr", "--config", path, "--config-compat"]).unwrap();
+        let loaded = load_config(&config.0, &compat).unwrap();
+        assert!(loaded.det.unwrap().model_path.as_os_str().is_empty());
+        assert_eq!(
+            loaded.rec.unwrap().dict_path,
+            PathBuf::from("models/ppocrv6_dict.txt")
+        );
+    }
+
+    #[test]
+    fn config_path_flags_select_cwd_config_directory_and_an_explicit_base() {
+        let config = TestConfig::new("");
+        let path = config.0.to_str().unwrap();
+        let cwd = Args::try_parse_from(["rapidocr", "--config", path]).unwrap();
+        assert_eq!(
+            load_config(&config.0, &cwd).unwrap().rec.unwrap().dict_path,
+            std::env::current_dir()
+                .unwrap()
+                .join("models/ppocrv6_dict.txt")
+        );
+        let relative =
+            Args::try_parse_from(["rapidocr", "--config", path, "--config-path-base", "config"])
+                .unwrap();
+        assert_eq!(
+            load_config(&config.0, &relative)
+                .unwrap()
+                .rec
+                .unwrap()
+                .dict_path,
+            config.0.parent().unwrap().join("models/ppocrv6_dict.txt")
+        );
+        let explicit = Args::try_parse_from([
+            "rapidocr",
+            "--config",
+            path,
+            "--config-base-dir",
+            "deployment",
+        ])
+        .unwrap();
+        assert_eq!(
+            load_config(&config.0, &explicit)
+                .unwrap()
+                .rec
+                .unwrap()
+                .dict_path,
+            std::env::current_dir()
+                .unwrap()
+                .join("deployment/models/ppocrv6_dict.txt")
+        );
+        assert!(Args::try_parse_from([
+            "rapidocr",
+            "--config",
+            path,
+            "--config-path-base",
+            "config",
+            "--config-base-dir",
+            "deployment"
+        ])
+        .is_err());
+    }
 
     #[test]
     fn select_model_set_accepts_default_model_set() {

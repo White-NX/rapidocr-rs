@@ -28,6 +28,24 @@ def write_model(root: Path, name: str, shape: list, output: np.ndarray) -> None:
     onnx.save(model, root / name)
 
 
+def write_failing_recognition_model(root: Path) -> None:
+    """Valid metadata, but reshaping a normal input to three elements fails at run time."""
+    shape = numpy_helper.from_array(np.array([1, 1, 3], dtype=np.int64), name="shape")
+    graph = helper.make_graph(
+        [helper.make_node("Reshape", ["image", "shape"], ["output"])],
+        "failing-rec.onnx",
+        [helper.make_tensor_value_info("image", TensorProto.FLOAT, [1, 3, 48, "width"])],
+        [helper.make_tensor_value_info("output", TensorProto.FLOAT, [1, 1, 3])],
+        [shape],
+    )
+    model = helper.make_model(
+        graph, producer_name="rapidocr-rs-tests", opset_imports=[helper.make_opsetid("", 13)]
+    )
+    model.ir_version = 8
+    onnx.checker.check_model(model)
+    onnx.save(model, root / "failing-rec.onnx")
+
+
 if __name__ == "__main__":
     root = Path(__file__).resolve().parents[1] / "crates/rapidocr-core/tests/fixtures"
     root.mkdir(parents=True, exist_ok=True)
@@ -35,3 +53,4 @@ if __name__ == "__main__":
     prediction = np.array([[[0, 1, 0], [1, 0, 0]]])  # CTC: "A", then blank.
     write_model(root, "constant-rec.onnx", [1, 3, 48, "width"], prediction)
     write_model(root, "wrong-batch-rec.onnx", [1, 3, 48, "width"], np.repeat(prediction, 2, axis=0))
+    write_failing_recognition_model(root)

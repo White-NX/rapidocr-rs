@@ -25,7 +25,7 @@ use rapidocr_core::{
     RapidOcr,
 };
 
-fn main() -> anyhow::Result<()> {
+fn main() -> rapidocr_core::OcrResult<()> {
     let model_set = model_set_by_name("ppocrv6-small").unwrap();
     let cache = ModelCache::new("models");
     cache.ensure_model_set_for_pipeline(
@@ -97,3 +97,61 @@ max_batch_pixels = 2097152
 TOML 中可以用 `"unlimited"` 关闭某个检测或识别限制，省略限制表则使用默认值。
 这些限制约束输入张量，不代表整个进程的内存上限。`ModelCache` 的下载接口会阻塞，
 需要下载时应在进入 Tokio 前调用，或使用 `spawn_blocking`。
+
+## 可分类的公共错误
+
+同步 OCR、模型缓存、运行时和配置接口统一返回 `OcrResult<T>`，即
+`Result<T, OcrError>`。调用方可以匹配错误变体或使用 `error.kind()`，无需匹配错误文本：
+
+| 错误 | 处理依据 |
+| --- | --- |
+| `OcrError::Model` | `ModelErrorKind` 区分缺失、校验失败、不兼容、I/O 和下载错误；`path` 标识相关模型或字典。 |
+| `OcrError::Runtime` | `RuntimeErrorKind` 区分初始化、会话配置、推理和取消信号错误；检查原始原因后决定是否重试。 |
+| `OcrError::InputLimit` | `stage`、`kind`、`requested`、`limit` 标识超限资源，便于切图、减小批次或调整限制。 |
+| `OcrError::InvalidInput` | 修复图片或路径后再运行。 |
+| `OcrError::Config` | `ConfigErrorKind` 区分解析、未知字段、开关冲突、校验、I/O 和路径解析错误。 |
+| `OcrError::Cancelled` | 停止当前请求；`is_cancelled_error` 接受 `&OcrError`。 |
+
+底层 ONNX、图片解码、网络和 I/O 错误通过 `std::error::Error::source` 保留，
+包括 ONNX 错误码。Tokio 使用 `TokioOcrError::Ocr(OcrError)` 返回同一套类型，
+队列、取消、超时和工作线程状态仍有明确变体。返回类型的调整属于 `0.3.0` 的
+API 兼容边界，核心库已移除对 `anyhow` 的依赖。
+
+文件加载会在分配像素缓冲区前检查解码字节数，采用 `ImageReader` 默认的 512 MiB
+分配限制，并以 `InputLimitKind::ImageBytes` 返回超限错误。需要自定义图片加载策略时，
+可自行加载 RGB 图片并调用 `run_image`。
+
+## 配置解析与路径基准
+
+部署时建议显式选择解析和路径策略：
+
+```rust
+use rapidocr_core::config::{ConfigLoadOptions, RapidOcrConfig};
+
+let config = RapidOcrConfig::from_toml_file_with_options(
+    "settings/ocr.toml",
+    &ConfigLoadOptions::new(),
+)?;
+```
+
+默认使用严格解析，模型与识别字典的相对路径以配置文件目录为基准。
+严格模式会拒绝各级未知字段，包括未启用阶段的字段。旧式顶层
+`use_det`、`use_cls`、`use_rec` 仍可单独使用；同时写入 `[pipeline]` 时，
+对应值必须一致。省略可选设置时仍使用原有默认值。
+
+原有 `from_toml_str`、`from_toml_file` 继续容忍未知字段，让顶层开关覆盖
+`[pipeline]`，并保留路径原样。`from_toml_str_strict`、`from_toml_file_strict`
+仅启用严格解析。`from_toml_str_with_base` 可指定字符串配置的路径基准，
+`resolve_model_paths(base)` 可为已有配置解析全部阶段的模型与字典路径。
+
+`ConfigLoadOptions` 可分别设置 `ConfigParseMode` 和 `ModelPathBase`。路径策略包括
+保留原样、工作目录、配置文件目录和指定目录；`ConfigLoadOptions::compatible()`
+复现原入口的完整行为。解析后的路径为绝对路径，无需模型文件已存在；已有绝对路径保持
+原样，允许 `..`。指定目录本身为相对路径时以加载时的工作目录为准。
+Windows 的 `C:models`、`\models` 等路径在解析时必须补全驱动器。
+
+CLI 默认严格解析，路径基准仍为工作目录，以兼容仓库现有配置。使用
+`--config-compat` 恢复宽松解析与顶层覆盖行为，并在默认路径策略下保留路径原样。
+使用 `--config-path-base config`
+改为配置文件目录，或使用 `--config-base-dir <目录>` 指定基准。
+以配置文件目录为基准时，`config/` 下的 TOML 应使用 `../models/...` 引用仓库模型。

@@ -6,26 +6,28 @@ use rapidocr_core::{
     RapidOcr,
 };
 
-fn main() -> anyhow::Result<()> {
-    let image_path = env::args().nth(1).map(PathBuf::from).ok_or_else(|| {
-        anyhow::anyhow!("usage: cargo run -p rapidocr-core --example library_usage -- <image>")
-    })?;
+fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let image_path = env::args()
+        .nth(1)
+        .map(PathBuf::from)
+        .ok_or("usage: cargo run -p rapidocr-core --example library_usage -- <image>")?;
     let model_dir = env::var_os("RAPIDOCR_MODEL_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("models"));
     let model_set_name =
         env::var("RAPIDOCR_MODEL_SET").unwrap_or_else(|_| DEFAULT_MODEL_SET_NAME.to_string());
     let model_set = model_set_by_name(&model_set_name)
-        .ok_or_else(|| anyhow::anyhow!("unknown model set {model_set_name:?}"))?;
+        .ok_or_else(|| format!("unknown model set {model_set_name:?}"))?;
     let pipeline = match env::var("RAPIDOCR_PIPELINE").as_deref() {
         Ok("full") | Err(_) => PipelineConfig::full(),
         Ok("no-cls") => PipelineConfig::without_cls(),
         Ok("det-only") => PipelineConfig::detection_only(),
         Ok("rec-only") => PipelineConfig::recognition_only(),
         Ok(value) => {
-            return Err(anyhow::anyhow!(
+            return Err(format!(
                 "unsupported RAPIDOCR_PIPELINE={value:?}; use full, no-cls, det-only, or rec-only"
-            ));
+            )
+            .into());
         }
     };
 

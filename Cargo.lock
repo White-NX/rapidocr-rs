@@ -1658,7 +1658,6 @@ dependencies = [
 name = "rapidocr-core"
 version = "0.3.0"
 dependencies = [
- "anyhow",
  "fs2",
  "image",
  "imageproc",

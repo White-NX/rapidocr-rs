@@ -13,7 +13,7 @@ use std::{
 #[cfg(feature = "model-download")]
 use std::io::Write;
 
-use anyhow::{bail, Context, Result};
+use crate::error::{ModelErrorKind, OcrError, OcrResult as Result, ResultExt};
 #[cfg(feature = "model-download")]
 use fs2::FileExt;
 use sha2::{Digest, Sha256};
@@ -781,8 +781,14 @@ impl ModelCache {
         assets: impl IntoIterator<Item = ModelAssetSpec>,
         mode: ModelDownloadMode,
     ) -> Result<()> {
-        fs::create_dir_all(&self.root)
-            .with_context(|| format!("failed to create model cache {}", self.root.display()))?;
+        fs::create_dir_all(&self.root).map_err(|source| {
+            OcrError::model(
+                ModelErrorKind::Io,
+                Some(&self.root),
+                format!("failed to create model cache {}", self.root.display()),
+            )
+            .with_source(source)
+        })?;
 
         #[cfg(feature = "model-download")]
         let mut download_lock = None;
@@ -807,19 +813,37 @@ impl ModelCache {
 
     fn ensure_asset(&self, asset: ModelAssetSpec, mode: ModelDownloadMode) -> Result<()> {
         let path = self.asset_path(asset);
-        if path.exists() {
-            if let Some(expected) = asset.sha256 {
-                verify_sha256(&path, expected)?;
+        let missing = match fs::metadata(&path) {
+            Ok(metadata) => {
+                if !metadata.is_file() {
+                    return Err(OcrError::model(
+                        ModelErrorKind::Io,
+                        Some(&path),
+                        format!("model asset path is not a file: {}", path.display()),
+                    ));
+                }
+                if let Some(expected) = asset.sha256 {
+                    verify_sha256(&path, expected)?;
+                }
+                return Ok(());
             }
-            return Ok(());
-        }
+            Err(source) if source.kind() == std::io::ErrorKind::NotFound => source,
+            Err(source) => {
+                return Err(OcrError::model(
+                    ModelErrorKind::Io,
+                    Some(&path),
+                    format!("failed to inspect model asset {}", path.display()),
+                )
+                .with_source(source))
+            }
+        };
 
         if mode == ModelDownloadMode::Never {
-            bail!(
+            return Err(OcrError::model(ModelErrorKind::NotFound, Some(&path), format!(
                 "missing model asset {} at {}; allow downloads or place the file in the model cache",
                 asset.name,
                 path.display()
-            );
+            )).with_source(missing));
         }
 
         download_asset(asset, &path)
@@ -837,24 +861,50 @@ pub fn ensure_ppocrv6_small_models(model_dir: impl AsRef<Path>) -> Result<PathBu
 fn download_asset(asset: ModelAssetSpec, path: &Path) -> Result<()> {
     let part_path = part_path(path);
     if part_path.exists() {
-        fs::remove_file(&part_path).with_context(|| {
-            format!(
-                "failed to remove stale model part file {}",
-                part_path.display()
+        fs::remove_file(&part_path).map_err(|source| {
+            OcrError::model(
+                ModelErrorKind::Io,
+                Some(&part_path),
+                format!(
+                    "failed to remove stale model part file {}",
+                    part_path.display()
+                ),
             )
+            .with_source(source)
         })?;
     }
 
     let client = reqwest::blocking::Client::builder()
         .user_agent("Mozilla/5.0 rapidocr-rs")
         .build()
-        .context("failed to build HTTP client")?;
+        .map_err(|source| {
+            OcrError::model(
+                ModelErrorKind::Download,
+                Some(path),
+                "failed to build HTTP client",
+            )
+            .with_source(source)
+        })?;
     let mut response = client
         .get(asset.url)
         .send()
-        .with_context(|| format!("failed to download {} from {}", asset.name, asset.url))?
+        .map_err(|source| {
+            OcrError::model(
+                ModelErrorKind::Download,
+                Some(path),
+                format!("failed to download {} from {}", asset.name, asset.url),
+            )
+            .with_source(source)
+        })?
         .error_for_status()
-        .with_context(|| format!("download returned an error for {}", asset.url))?;
+        .map_err(|source| {
+            OcrError::model(
+                ModelErrorKind::Download,
+                Some(path),
+                format!("download returned an error for {}", asset.url),
+            )
+            .with_source(source)
+        })?;
 
     install_asset_from_reader(asset, path, &mut response)
 }
@@ -868,10 +918,22 @@ fn lock_model_cache(root: &Path) -> Result<fs::File> {
         .create(true)
         .truncate(false)
         .open(&lock_path)
-        .with_context(|| format!("failed to open model cache lock {}", lock_path.display()))?;
-    lock_file
-        .lock_exclusive()
-        .with_context(|| format!("failed to lock model cache {}", root.display()))?;
+        .map_err(|source| {
+            OcrError::model(
+                ModelErrorKind::Io,
+                Some(&lock_path),
+                format!("failed to open model cache lock {}", lock_path.display()),
+            )
+            .with_source(source)
+        })?;
+    lock_file.lock_exclusive().map_err(|source| {
+        OcrError::model(
+            ModelErrorKind::Io,
+            Some(root),
+            format!("failed to lock model cache {}", root.display()),
+        )
+        .with_source(source)
+    })?;
     Ok(lock_file)
 }
 
@@ -884,70 +946,120 @@ fn install_asset_from_reader(
     let part_path = part_path(path);
     if path.exists() {
         let _ = fs::remove_file(&part_path);
-        bail!(
-            "refusing to replace existing model file {} while installing {}",
-            path.display(),
-            asset.name
-        );
+        return Err(OcrError::model(
+            ModelErrorKind::Io,
+            Some(path),
+            format!(
+                "refusing to replace existing model file {} while installing {}",
+                path.display(),
+                asset.name
+            ),
+        ));
     }
 
     let result = (|| -> Result<()> {
         if part_path.exists() {
-            fs::remove_file(&part_path).with_context(|| {
-                format!(
-                    "failed to remove stale model part file {}",
-                    part_path.display()
+            fs::remove_file(&part_path).map_err(|source| {
+                OcrError::model(
+                    ModelErrorKind::Io,
+                    Some(&part_path),
+                    format!(
+                        "failed to remove stale model part file {}",
+                        part_path.display()
+                    ),
                 )
+                .with_source(source)
             })?;
         }
-        let mut file = fs::File::create(&part_path)
-            .with_context(|| format!("failed to create model part file {}", part_path.display()))?;
+        let mut file = fs::File::create(&part_path).map_err(|source| {
+            OcrError::model(
+                ModelErrorKind::Io,
+                Some(&part_path),
+                format!("failed to create model part file {}", part_path.display()),
+            )
+            .with_source(source)
+        })?;
         let mut hasher = Sha256::new();
         let mut buffer = [0_u8; 64 * 1024];
 
         loop {
-            let read = reader
-                .read(&mut buffer)
-                .with_context(|| format!("failed to read response body for {}", asset.url))?;
+            let read = reader.read(&mut buffer).map_err(|source| {
+                OcrError::model(
+                    ModelErrorKind::Download,
+                    Some(path),
+                    format!("failed to read response body for {}", asset.url),
+                )
+                .with_source(source)
+            })?;
             if read == 0 {
                 break;
             }
-            file.write_all(&buffer[..read]).with_context(|| {
-                format!("failed to write model part file {}", part_path.display())
+            file.write_all(&buffer[..read]).map_err(|source| {
+                OcrError::model(
+                    ModelErrorKind::Io,
+                    Some(&part_path),
+                    format!("failed to write model part file {}", part_path.display()),
+                )
+                .with_source(source)
             })?;
             hasher.update(&buffer[..read]);
         }
 
-        file.flush()
-            .with_context(|| format!("failed to flush model part file {}", part_path.display()))?;
-        file.sync_all()
-            .with_context(|| format!("failed to sync model part file {}", part_path.display()))?;
+        file.flush().map_err(|source| {
+            OcrError::model(
+                ModelErrorKind::Io,
+                Some(&part_path),
+                format!("failed to flush model part file {}", part_path.display()),
+            )
+            .with_source(source)
+        })?;
+        file.sync_all().map_err(|source| {
+            OcrError::model(
+                ModelErrorKind::Io,
+                Some(&part_path),
+                format!("failed to sync model part file {}", part_path.display()),
+            )
+            .with_source(source)
+        })?;
 
         if let Some(expected) = asset.sha256 {
             let actual = format!("{:x}", hasher.finalize());
             if actual != expected {
-                bail!(
-                    "sha256 mismatch for {}: expected {}, got {}",
-                    path.display(),
-                    expected,
-                    actual
-                );
+                return Err(OcrError::model(
+                    ModelErrorKind::Integrity,
+                    Some(path),
+                    format!(
+                        "sha256 mismatch for {}: expected {}, got {}",
+                        path.display(),
+                        expected,
+                        actual
+                    ),
+                ));
             }
         }
 
         drop(file);
         if path.exists() {
-            bail!(
-                "refusing to replace model file {} created while {} was downloading",
-                path.display(),
-                asset.name
-            );
+            return Err(OcrError::model(
+                ModelErrorKind::Io,
+                Some(path),
+                format!(
+                    "refusing to replace model file {} created while {} was downloading",
+                    path.display(),
+                    asset.name
+                ),
+            ));
         }
-        fs::rename(&part_path, path).with_context(|| {
-            format!(
-                "failed to atomically install downloaded model {}",
-                path.display()
+        fs::rename(&part_path, path).map_err(|source| {
+            OcrError::model(
+                ModelErrorKind::Io,
+                Some(path),
+                format!(
+                    "failed to atomically install downloaded model {}",
+                    path.display()
+                ),
             )
+            .with_source(source)
         })?;
         Ok(())
     })();
@@ -960,22 +1072,38 @@ fn install_asset_from_reader(
 
 #[cfg(not(feature = "model-download"))]
 fn download_asset(asset: ModelAssetSpec, path: &Path) -> Result<()> {
-    bail!(
+    Err(OcrError::model(ModelErrorKind::DownloadDisabled, Some(path), format!(
         "missing model asset {} at {}; rapidocr-core was built without the `model-download` feature, so enable it or place the file in the model cache",
         asset.name,
         path.display()
-    )
+    )))
 }
 
 fn verify_sha256(path: &Path, expected: &str) -> Result<()> {
-    let mut file = fs::File::open(path)
-        .with_context(|| format!("failed to open model file {}", path.display()))?;
+    let mut file = fs::File::open(path).map_err(|source| {
+        let kind = if source.kind() == std::io::ErrorKind::NotFound {
+            ModelErrorKind::NotFound
+        } else {
+            ModelErrorKind::Io
+        };
+        OcrError::model(
+            kind,
+            Some(path),
+            format!("failed to open model file {}", path.display()),
+        )
+        .with_source(source)
+    })?;
     let mut hasher = Sha256::new();
     let mut buffer = [0_u8; 64 * 1024];
     loop {
-        let read = file
-            .read(&mut buffer)
-            .with_context(|| format!("failed to read model file {}", path.display()))?;
+        let read = file.read(&mut buffer).map_err(|source| {
+            OcrError::model(
+                ModelErrorKind::Io,
+                Some(path),
+                format!("failed to read model file {}", path.display()),
+            )
+            .with_source(source)
+        })?;
         if read == 0 {
             break;
         }
@@ -983,12 +1111,16 @@ fn verify_sha256(path: &Path, expected: &str) -> Result<()> {
     }
     let actual = format!("{:x}", hasher.finalize());
     if actual != expected {
-        bail!(
-            "sha256 mismatch for {}: expected {}, got {}",
-            path.display(),
-            expected,
-            actual
-        );
+        return Err(OcrError::model(
+            ModelErrorKind::Integrity,
+            Some(path),
+            format!(
+                "sha256 mismatch for {}: expected {}, got {}",
+                path.display(),
+                expected,
+                actual
+            ),
+        ));
     }
     Ok(())
 }

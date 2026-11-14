@@ -27,7 +27,6 @@ model-download = ["dep:fs2", "dep:reqwest"]
 tokio = ["dep:tokio"]
 
 [dependencies]
-anyhow = "1"
 fs2 = { version = "0.4", optional = true }
 image = "0.25"
 imageproc = "0.25"

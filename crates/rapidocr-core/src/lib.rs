@@ -5,12 +5,17 @@
 //! [`model`], and output data types in [`types`]. Detection, classification,
 //! recognition, image preprocessing, and postprocessing modules are internal
 //! implementation details.
+//!
+//! Fallible synchronous APIs return [`OcrResult<T>`] with a categorized
+//! [`OcrError`]. Match its variants or use [`OcrError::kind`] for recovery;
+//! original backend and I/O causes remain available through `Error::source`.
 
 pub mod cancellation;
 pub(crate) mod cls;
 pub mod config;
 pub(crate) mod db_postprocess;
 pub(crate) mod det;
+pub mod error;
 pub(crate) mod geometry;
 pub(crate) mod image_ops;
 pub(crate) mod inference;
@@ -23,6 +28,10 @@ pub mod types;
 pub mod tokio;
 
 pub use cancellation::{is_cancelled_error, OcrCancellationToken, OcrCancelled};
+pub use error::{
+    ConfigErrorKind, InputLimitKind, ModelErrorKind, OcrError, OcrErrorKind, OcrResult, OcrStage,
+    RuntimeErrorKind,
+};
 pub use runtime::OcrRuntime;
 
 /// Version of `rapidocr-core` compiled into the application.
@@ -36,7 +45,7 @@ mod e2e_tests;
 
 use std::{path::Path, time::Instant};
 
-use anyhow::{bail, Context, Result};
+use crate::error::{OcrResult as Result, ResultExt};
 
 use crate::{
     cls::TextClassifier,
@@ -81,10 +90,9 @@ impl RapidOcr {
     fn new_inner(cfg: RapidOcrConfig, runtime: Option<&OcrRuntime>) -> Result<Self> {
         cfg.validate().context("invalid OCR config")?;
         let detector = if cfg.pipeline.use_det {
-            let det_cfg = cfg
-                .det
-                .clone()
-                .context("pipeline.use_det is true but [det] config is missing")?;
+            let det_cfg = cfg.det.clone().ok_or_else(|| {
+                OcrError::invalid_config("pipeline.use_det is true but [det] config is missing")
+            })?;
             Some(
                 TextDetector::new(det_cfg, cfg.inference, runtime)
                     .context("failed to initialize detection stage")?,
@@ -93,10 +101,9 @@ impl RapidOcr {
             None
         };
         let classifier = if cfg.pipeline.use_cls {
-            let cls_cfg = cfg
-                .cls
-                .clone()
-                .context("pipeline.use_cls is true but [cls] config is missing")?;
+            let cls_cfg = cfg.cls.clone().ok_or_else(|| {
+                OcrError::invalid_config("pipeline.use_cls is true but [cls] config is missing")
+            })?;
             Some(
                 TextClassifier::new(cls_cfg, cfg.inference, runtime)
                     .context("failed to initialize classification stage")?,
@@ -105,10 +112,9 @@ impl RapidOcr {
             None
         };
         let recognizer = if cfg.pipeline.use_rec {
-            let rec_cfg = cfg
-                .rec
-                .clone()
-                .context("pipeline.use_rec is true but [rec] config is missing")?;
+            let rec_cfg = cfg.rec.clone().ok_or_else(|| {
+                OcrError::invalid_config("pipeline.use_rec is true but [rec] config is missing")
+            })?;
             Some(
                 TextRecognizer::new(rec_cfg, cfg.inference, runtime)
                     .context("failed to initialize recognition stage")?,
@@ -216,7 +222,10 @@ impl RapidOcr {
         let mut timings = OcrTimings::default();
         cancellation.checkpoint()?;
         if image.width() == 0 || image.height() == 0 {
-            bail!("invalid image: width and height must be greater than 0");
+            return Err(OcrError::invalid_input(
+                None,
+                "invalid image: width and height must be greater than 0",
+            ));
         }
 
         let detection_enabled = self.detector.is_some();
@@ -295,7 +304,7 @@ impl RapidOcr {
         let detector = self
             .detector
             .as_mut()
-            .context("detection stage is not enabled")?;
+            .ok_or_else(|| OcrError::invalid_config("detection stage is not enabled"))?;
         let det = detector.detect_timed(&det_image, cancellation)?;
         timings.add_assign(&det.timings);
         let mut boxes = det.boxes;

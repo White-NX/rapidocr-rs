@@ -272,12 +272,32 @@ The curated current baseline is recorded in [../benchmark-baseline.md](../benchm
 ## Release Compatibility
 
 The `0.3.0` release is the API compatibility boundary for the public struct and
-enum cleanup. After this release, patch changes are checked in CI with
+enum cleanup and the move from `anyhow::Result` to `OcrResult<T>` / `OcrError`.
+`TokioOcrError::Ocr` now contains `OcrError`, and `is_cancelled_error` accepts `&OcrError`.
+After this release, patch changes are checked in CI with
 `cargo-semver-checks`; public data types should be consumed through constructors,
 builders, `Default`, or exhaustive matches with a wildcard arm where appropriate.
 
 ## Error And Image Handling Notes
 
-Missing images, model files, dictionaries, invalid config values, and ONNX loading failures include the relevant path and stage in the error message.
+Match `OcrError` or `OcrError::kind()` to choose recovery. Model errors distinguish missing,
+corrupt, incompatible, I/O, and download failures. Runtime errors distinguish environment,
+session/provider, and execution failures. Input-limit errors expose stage, resource, requested
+amount, and limit. `std::error::Error::source` preserves original ONNX, parser, decoder,
+network, and I/O errors. Diagnostics may change; callers must not match their text.
+
+Configuration's original string/file loaders retain permissive parsing, legacy top-level
+flag precedence, and model paths as written. The `_strict` loaders reject unknown fields
+and contradictory legacy/nested flags. `from_toml_file_with_options` defaults to strict
+parsing and absolute paths rooted at the TOML file directory; `ConfigLoadOptions::compatible()`
+reproduces the original loader. Explicit directory and working-directory bases are also
+available, as are `from_toml_str_with_base` and atomic `resolve_model_paths` for existing configs.
+Resolution permits missing assets and preserves absolute paths.
+
+The CLI defaults to strict parsing with the working directory as its model-path base.
+Use `--config-compat` for older parsing behavior, `--config-path-base config` for a TOML
+directory base, or `--config-base-dir <directory>` for an explicit base. Existing bundled
+TOML files use `models/...`; change those to `../models/...` when selecting a directory
+base for files under `config/`.
 
 Image loading applies file EXIF orientation and composites alpha-channel images onto a high-contrast background before OCR. Perspective crops near image edges use replicated border pixels before warping, matching Python's OpenCV crop behavior for tiny edge text in the covered parity fixtures.

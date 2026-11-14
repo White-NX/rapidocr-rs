@@ -3,9 +3,10 @@ use std::sync::{
     Arc, Mutex,
 };
 
-use anyhow::{Context, Result};
 use ort::session::RunOptions;
 use thiserror::Error;
+
+use crate::error::{OcrError, OcrResult as Result, RuntimeErrorKind};
 
 #[derive(Debug, Error)]
 #[error("OCR operation was cancelled")]
@@ -56,9 +57,13 @@ impl OcrCancellationToken {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clone();
         if let Some(active_run) = active_run {
-            active_run
-                .terminate()
-                .context("ONNX Runtime rejected the termination signal")?;
+            active_run.terminate().map_err(|source| {
+                OcrError::runtime(
+                    RuntimeErrorKind::Cancellation,
+                    "ONNX Runtime rejected the termination signal",
+                )
+                .with_source(source)
+            })?;
         }
         Ok(())
     }
@@ -78,7 +83,13 @@ impl OcrCancellationToken {
 
     pub(crate) fn begin_onnx_run(&self) -> Result<ActiveRunOptions> {
         self.checkpoint()?;
-        let options = Arc::new(RunOptions::new().context("failed to create ONNX run options")?);
+        let options = Arc::new(RunOptions::new().map_err(|source| {
+            OcrError::runtime(
+                RuntimeErrorKind::Cancellation,
+                "failed to create ONNX run options",
+            )
+            .with_source(source)
+        })?);
         {
             let mut active_run = self
                 .state
@@ -146,9 +157,9 @@ impl Drop for ActiveRunOptions {
     }
 }
 
-/// Returns whether an `anyhow` error represents cooperative OCR cancellation.
-pub fn is_cancelled_error(error: &anyhow::Error) -> bool {
-    error.downcast_ref::<OcrCancelled>().is_some()
+/// Returns whether a typed OCR error represents cooperative cancellation.
+pub fn is_cancelled_error(error: &OcrError) -> bool {
+    matches!(error, OcrError::Cancelled(_))
 }
 
 #[cfg(test)]

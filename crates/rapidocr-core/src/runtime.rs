@@ -9,10 +9,9 @@ use std::sync::Mutex;
 #[cfg(feature = "load-dynamic")]
 use std::path::{Path, PathBuf};
 
-#[cfg(feature = "load-dynamic")]
-use anyhow::{bail, ensure};
-use anyhow::{Context, Result};
 use ort::environment::Environment;
+
+use crate::error::{OcrError, OcrResult as Result, RuntimeErrorKind};
 
 // ORT permits only one environment per process, including after the last
 // session is dropped. Keep a strong handle so later pipelines can reuse it.
@@ -60,8 +59,13 @@ impl OcrRuntime {
                 ))
             });
         #[cfg(feature = "load-dynamic")]
-        let builder = ort::init_from(&path)
-            .with_context(|| format!("failed to load ONNX Runtime from {}", path.display()))?;
+        let builder = ort::init_from(&path).map_err(|source| {
+            OcrError::runtime(
+                RuntimeErrorKind::Initialization,
+                format!("failed to load ONNX Runtime from {}", path.display()),
+            )
+            .with_source(source)
+        })?;
         #[cfg(not(feature = "load-dynamic"))]
         let builder = ort::init();
 
@@ -70,7 +74,7 @@ impl OcrRuntime {
                 .with_name("rapidocr")
                 .with_telemetry(false)
                 .build()
-                .context("failed to initialize ONNX Runtime; if the application already owns an ort environment, use OcrRuntime::from_environment and new_with_runtime")?,
+                .map_err(|source| OcrError::runtime(RuntimeErrorKind::Initialization, "failed to initialize ONNX Runtime; if the application already owns an ort environment, use OcrRuntime::from_environment and new_with_runtime").with_source(source))?,
             #[cfg(feature = "load-dynamic")]
             library_path: Some(resolve_library_path(&path)),
         };
@@ -87,30 +91,51 @@ impl OcrRuntime {
     #[cfg(feature = "load-dynamic")]
     pub fn load_from(path: impl AsRef<Path>) -> Result<Self> {
         let path = path.as_ref();
-        let path = std::fs::canonicalize(path)
-            .with_context(|| format!("ONNX Runtime library not found at {}", path.display()))?;
-        ensure!(
-            path.is_file(),
-            "ONNX Runtime library path is not a file: {}",
-            path.display()
-        );
+        let path = std::fs::canonicalize(path).map_err(|source| {
+            OcrError::runtime(
+                RuntimeErrorKind::Initialization,
+                format!("ONNX Runtime library not found at {}", path.display()),
+            )
+            .with_source(source)
+        })?;
+        if !path.is_file() {
+            return Err(OcrError::runtime(
+                RuntimeErrorKind::Initialization,
+                format!(
+                    "ONNX Runtime library path is not a file: {}",
+                    path.display()
+                ),
+            ));
+        }
 
         let mut cached = DEFAULT_RUNTIME
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         if let Some(runtime) = cached.as_ref() {
             if runtime.library_path.as_ref() != Some(&path) {
-                bail!("ONNX Runtime is already initialized with another library; select the library before constructing any OCR pipeline");
+                return Err(OcrError::runtime(RuntimeErrorKind::Initialization, "ONNX Runtime is already initialized with another library; select the library before constructing any OCR pipeline"));
             }
             return Ok(runtime.clone());
         }
 
         let environment = ort::init_from(&path)
-            .with_context(|| format!("failed to load ONNX Runtime from {}", path.display()))?
+            .map_err(|source| {
+                OcrError::runtime(
+                    RuntimeErrorKind::Initialization,
+                    format!("failed to load ONNX Runtime from {}", path.display()),
+                )
+                .with_source(source)
+            })?
             .with_name("rapidocr")
             .with_telemetry(false)
             .build()
-            .context("failed to initialize ONNX Runtime environment")?;
+            .map_err(|source| {
+                OcrError::runtime(
+                    RuntimeErrorKind::Initialization,
+                    "failed to initialize ONNX Runtime environment",
+                )
+                .with_source(source)
+            })?;
         let runtime = Self {
             environment,
             library_path: Some(path),

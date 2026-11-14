@@ -1,12 +1,12 @@
 use std::time::Instant;
 
-use anyhow::{bail, ensure, Context, Result};
 use image::{imageops, RgbImage};
 use ndarray::{s, Array4, Ix2};
 
 use crate::{
     cancellation::OcrCancellationToken,
     config::{ClsConfig, InferenceOptions},
+    error::{OcrError, OcrResult as Result, ResultExt},
     inference::OnnxSession,
     types::OcrTimings,
     OcrRuntime,
@@ -70,7 +70,9 @@ impl TextClassifier {
             cancellation.checkpoint()?;
             let [channels, img_h, img_w] = self.cfg.image_shape;
             if channels != 3 {
-                bail!("only 3-channel classification input is supported");
+                return Err(OcrError::invalid_config(
+                    "only 3-channel classification input is supported",
+                ));
             }
 
             let start = Instant::now();
@@ -87,7 +89,11 @@ impl TextClassifier {
             timings.cls_inference_ms += elapsed_ms(start);
 
             let start = Instant::now();
-            let pred = pred.into_dimensionality::<Ix2>()?;
+            let pred = pred.into_dimensionality::<Ix2>().map_err(|source| {
+                OcrError::incompatible_model("classification output must have rank 2")
+                    .with_model_path(&self.cfg.model_path)
+                    .with_source(source)
+            })?;
             for row in pred.outer_iter() {
                 cancellation.checkpoint()?;
                 let (idx, score) = row
@@ -96,16 +102,18 @@ impl TextClassifier {
                     .max_by(|(_, a), (_, b)| a.total_cmp(b))
                     .map(|(idx, score)| (idx, *score))
                     .unwrap_or((0, 0.0));
-                ensure!(
-                    score.is_finite(),
-                    "classification output contains a non-finite confidence"
-                );
-                let label = self
-                    .cfg
-                    .labels
-                    .get(idx)
-                    .cloned()
-                    .context("classification output class is not present in cls.labels")?;
+                if !score.is_finite() {
+                    return Err(OcrError::incompatible_model(
+                        "classification output contains a non-finite confidence",
+                    )
+                    .with_model_path(&self.cfg.model_path));
+                }
+                let label = self.cfg.labels.get(idx).cloned().ok_or_else(|| {
+                    OcrError::incompatible_model(
+                        "classification output class is not present in cls.labels",
+                    )
+                    .with_model_path(&self.cfg.model_path)
+                })?;
                 results.push(ClsResult { label, score });
             }
             timings.cls_postprocess_ms += elapsed_ms(start);
@@ -136,7 +144,9 @@ impl TextClassifier {
     fn resize_norm_img(&self, img: &RgbImage) -> Result<ndarray::Array3<f32>> {
         let [channels, img_h, img_w] = self.cfg.image_shape;
         if channels != 3 {
-            bail!("only 3-channel classification input is supported");
+            return Err(OcrError::invalid_config(
+                "only 3-channel classification input is supported",
+            ));
         }
 
         let ratio = img.width() as f32 / img.height().max(1) as f32;

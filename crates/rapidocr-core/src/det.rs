@@ -1,11 +1,10 @@
 use std::time::Instant;
 
-use anyhow::{Context, Result};
-
 use crate::{
     cancellation::OcrCancellationToken,
     config::{DetConfig, InferenceOptions, LimitType},
     db_postprocess::{DbPostProcess, DbPostProcessConfig},
+    error::{OcrResult as Result, ResultExt},
     image_ops::{resize_to_multiple_for_det, rgb_to_nchw},
     inference::OnnxSession,
     types::{OcrTimings, Quad},

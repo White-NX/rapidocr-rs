@@ -6,11 +6,11 @@ use rapidocr_core::{
     tokio::{TokioOcrError, TokioRapidOcr},
 };
 
-fn main() -> anyhow::Result<()> {
+fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let image_path = std::env::args_os()
         .nth(1)
         .map(PathBuf::from)
-        .ok_or_else(|| anyhow::anyhow!("usage: tokio_usage <image-path>"))?;
+        .ok_or("usage: tokio_usage <image-path>")?;
 
     // ModelCache's optional downloader is blocking. Prepare assets before
     // entering the async runtime; async applications can use spawn_blocking.

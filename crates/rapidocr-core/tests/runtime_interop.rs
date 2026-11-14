@@ -2,6 +2,7 @@ mod common;
 
 use image::RgbImage;
 use rapidocr_core::{OcrRuntime, RapidOcr};
+use std::error::Error;
 
 // Kept in a separate integration-test binary: ORT environments are process-wide.
 #[test]
@@ -31,6 +32,16 @@ fn application_environment_is_shared_without_initializing_another_environment() 
         ocr.run_image(&RgbImage::new(320, 48)).unwrap().lines[0].text,
         "A"
     );
+
+    let error = OcrRuntime::new().unwrap_err();
+    assert!(matches!(
+        &error,
+        rapidocr_core::OcrError::Runtime {
+            kind: rapidocr_core::RuntimeErrorKind::Initialization,
+            ..
+        }
+    ));
+    assert!(error.source().unwrap().is::<ort::Error>());
 
     #[cfg(feature = "tokio")]
     tokio::runtime::Builder::new_current_thread()

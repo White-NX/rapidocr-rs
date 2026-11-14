@@ -66,7 +66,7 @@ use rapidocr_core::{
     RapidOcr,
 };
 
-fn main() -> anyhow::Result<()> {
+fn main() -> rapidocr_core::OcrResult<()> {
     let model_set = model_set_by_name("ppocrv6-small").unwrap();
     let cache = ModelCache::new("models");
     cache.ensure_model_set_for_pipeline(
@@ -262,6 +262,75 @@ table receives the safe defaults. The limits cover input tensors, rather than to
 ```powershell
 cargo run -p rapidocr-core --features tokio --example tokio_usage -- path\to\image.png
 ```
+
+## Public Errors
+
+Synchronous OCR, runtime, model-cache, and configuration APIs return `OcrResult<T>`
+(`Result<T, OcrError>`). Match the public variants or call `error.kind()`; diagnostic
+text is for humans and is not a matching contract.
+
+| Error variant | Recovery information |
+| --- | --- |
+| `Model` | `ModelErrorKind` distinguishes missing assets, checksum failures, incompatible models/dictionaries, I/O, and downloads; `path` identifies the asset. |
+| `Runtime` | `RuntimeErrorKind` distinguishes initialization, session/provider setup, execution, cancellation signaling, and worker failures. Inspect the original cause before retrying. |
+| `InputLimit` | `stage`, `kind`, `requested`, and `limit` identify the resource; tile the input, reduce batching, or adjust the policy. |
+| `InvalidInput` | Repair the image or path before retrying. |
+| `Config` | `ConfigErrorKind` distinguishes parsing, unknown fields, conflicting flags, validation, I/O, serialization, and path resolution. |
+| `Cancelled` | Stop the request; `is_cancelled_error` accepts `&OcrError`. |
+
+Original ONNX, image-decoder, network, and I/O errors remain accessible through
+`std::error::Error::source`, including the ONNX error code. Tokio exposes the same
+typed error in `TokioOcrError::Ocr(OcrError)` and retains its explicit queue,
+cancellation, timeout, and worker states. These return-type changes are part of the
+`0.3.0` compatibility boundary; the core no longer depends on `anyhow`.
+
+File loading checks decoded image bytes before pixel allocation using `ImageReader`'s
+default 512 MiB allocation limit. These failures use `InputLimitKind::ImageBytes`;
+applications with their own image-loading policy can supply an RGB image to `run_image`.
+
+## Configuration Parsing and Path Bases
+
+Use an explicit file-loading policy for deployments:
+
+```rust
+use rapidocr_core::config::{ConfigLoadOptions, RapidOcrConfig};
+
+let config = RapidOcrConfig::from_toml_file_with_options(
+    "settings/ocr.toml",
+    &ConfigLoadOptions::new(),
+)?;
+```
+
+`ConfigLoadOptions::new()` selects strict parsing and the configuration file's
+directory as the model/dictionary path base. Strict parsing rejects unknown fields
+at every level, including disabled stages. Legacy top-level `use_det`, `use_cls`,
+and `use_rec` remain accepted; a flag also explicitly present in `[pipeline]` must
+have the same value. Missing optional settings keep their existing defaults.
+
+| Entry point | Parsing | Model/dictionary paths |
+| --- | --- | --- |
+| `from_toml_str`, `from_toml_file` | Compatible: unknown fields ignored, legacy flags override `[pipeline]` | As written; relative paths follow the working directory at use time |
+| `from_toml_str_strict`, `from_toml_file_strict` | Strict | As written |
+| `from_toml_str_with_base` | Strict | Absolute paths rooted at the supplied directory |
+| `from_toml_file_with_options` | Selected by `ConfigParseMode` | Selected by `ModelPathBase`; defaults to the configuration directory |
+
+`ModelPathBase` offers `AsProvided`, `WorkingDirectory`, `ConfigDirectory`, and
+`Directory(PathBuf)`. Resolution snapshots relative paths as absolute paths without
+requiring the assets to exist, so configuration can load before model preparation.
+Absolute asset paths are preserved. Relative explicit base directories follow the
+working directory at load time; `..` components are allowed. On Windows, drive-relative
+(`C:models`) and root-relative (`\models`) paths require an explicit drive when resolving.
+Call `resolve_model_paths(base)` to resolve an existing configuration; it updates all
+configured stages atomically. `ConfigLoadOptions::compatible()` reproduces the original
+file loader's complete parsing and path behavior.
+
+The CLI parses strictly by default and keeps the working directory as its default
+path base, preserving existing bundled configurations. Use `--config-compat` for
+legacy unknown-field/override behavior and paths as written with the default base,
+`--config-path-base config` for a base at the
+TOML file's directory, or `--config-base-dir <directory>` for an explicit base.
+With `--config-path-base config`, a TOML file in `config/` should use `../models/...`
+to refer to the workspace model directory.
 
 ## Supported Model Sets
 

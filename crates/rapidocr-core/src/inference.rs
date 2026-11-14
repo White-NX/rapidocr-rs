@@ -1,6 +1,5 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-use anyhow::{bail, ensure, Context, Result};
 use ndarray::{Array4, ArrayD};
 use ort::{
     session::builder::GraphOptimizationLevel,
@@ -10,12 +9,17 @@ use ort::{
 
 #[cfg(feature = "directml")]
 use crate::config::ExecutionProvider;
+use crate::error::{
+    ensure_model as ensure, ModelErrorKind, OcrError, OcrResult as Result, ResultExt,
+    RuntimeErrorKind,
+};
 use crate::{cancellation::OcrCancellationToken, config::InferenceOptions, OcrRuntime};
 
 pub(crate) struct OnnxSession {
     session: Session,
     input_shape: Vec<Option<usize>>,
     output_shape: Vec<Option<usize>>,
+    model_path: PathBuf,
 }
 
 impl OnnxSession {
@@ -27,34 +31,41 @@ impl OnnxSession {
         runtime: Option<&OcrRuntime>,
     ) -> Result<Self> {
         let model_path = model_path.as_ref();
-        if !model_path.exists() {
-            bail!(
-                "ONNX model file not found at {}; check the config model path or prepare the model cache",
-                model_path.display()
-            );
-        }
-        if !model_path.is_file() {
-            bail!("ONNX model path is not a file: {}", model_path.display());
+        let metadata = std::fs::metadata(model_path).map_err(|source| {
+            let (kind, message) = if source.kind() == std::io::ErrorKind::NotFound {
+                (ModelErrorKind::NotFound, format!("ONNX model file not found at {}; check the config model path or prepare the model cache", model_path.display()))
+            } else {
+                (ModelErrorKind::Io, format!("failed to inspect ONNX model {}", model_path.display()))
+            };
+            OcrError::model(kind, Some(model_path), message).with_source(source)
+        })?;
+        if !metadata.is_file() {
+            return Err(OcrError::model(
+                ModelErrorKind::Io,
+                Some(model_path),
+                format!("ONNX model path is not a file: {}", model_path.display()),
+            ));
         }
         options.validate()?;
         let runtime = match runtime {
             Some(runtime) => runtime.clone(),
             None => OcrRuntime::new()?,
         };
-        let mut session_builder = Session::builder(runtime.environment())?
+        let mut session_builder = Session::builder(runtime.environment())
+            .map_err(session_configuration_error)?
             .with_optimization_level(GraphOptimizationLevel::Level3)
-            .map_err(ort::Error::<()>::from)?
+            .map_err(session_configuration_error)?
             .with_intra_threads(options.intra_threads)
-            .map_err(ort::Error::<()>::from)?
+            .map_err(session_configuration_error)?
             .with_inter_threads(options.inter_threads)
-            .map_err(ort::Error::<()>::from)?
+            .map_err(session_configuration_error)?
             .with_parallel_execution(options.parallel_execution)
-            .map_err(ort::Error::<()>::from)?
+            .map_err(session_configuration_error)?
             .with_memory_pattern(
                 input_shape.iter().all(Option::is_some)
                     && options.execution_provider != crate::config::ExecutionProvider::DirectMl,
             )
-            .map_err(ort::Error::<()>::from)?;
+            .map_err(session_configuration_error)?;
 
         let mut providers = Vec::with_capacity(2);
         #[cfg(feature = "directml")]
@@ -70,29 +81,40 @@ impl OnnxSession {
         );
         session_builder = session_builder
             .with_execution_providers(providers)
-            .map_err(ort::Error::<()>::from)?;
+            .map_err(session_configuration_error)?;
 
         let session = session_builder
             .commit_from_file(model_path)
-            .with_context(|| format!("failed to load ONNX model {}", model_path.display()))?;
-        ensure!(
-            session.inputs().len() == 1,
-            "OCR model {} must have exactly one image input, got {}",
-            model_path.display(),
-            session.inputs().len()
-        );
+            .map_err(|source| model_load_error(model_path, source))?;
+        if session.inputs().len() != 1 {
+            return Err(OcrError::model(
+                ModelErrorKind::Incompatible,
+                Some(model_path),
+                format!(
+                    "OCR model {} must have exactly one image input, got {}",
+                    model_path.display(),
+                    session.inputs().len()
+                ),
+            ));
+        }
         let input_shape = validate_model_tensor(&session.inputs()[0], &input_shape, "input")
+            .map_err(|error| error.with_model_path(model_path))
             .with_context(|| format!("incompatible ONNX model {}", model_path.display()))?;
-        let output = session
-            .outputs()
-            .first()
-            .with_context(|| format!("ONNX model {} has no outputs", model_path.display()))?;
+        let output = session.outputs().first().ok_or_else(|| {
+            OcrError::model(
+                ModelErrorKind::Incompatible,
+                Some(model_path),
+                format!("ONNX model {} has no outputs", model_path.display()),
+            )
+        })?;
         let output_shape = validate_model_tensor(output, output_shape, "output")
+            .map_err(|error| error.with_model_path(model_path))
             .with_context(|| format!("incompatible ONNX model {}", model_path.display()))?;
         Ok(Self {
             session,
             input_shape,
             output_shape,
+            model_path: model_path.to_path_buf(),
         })
     }
 
@@ -102,30 +124,47 @@ impl OnnxSession {
         cancellation: &OcrCancellationToken,
     ) -> Result<ArrayD<f32>> {
         cancellation.checkpoint()?;
-        validate_tensor_shape(input.shape(), &self.input_shape, "input")?;
+        validate_tensor_shape(input.shape(), &self.input_shape, "input")
+            .map_err(|error| error.with_model_path(&self.model_path))?;
         let run_options = cancellation.begin_onnx_run()?;
         let output = {
             let outputs = self
                 .session
                 .run_with_options(
-                    ort::inputs![TensorRef::from_array_view(input)?],
+                    ort::inputs![TensorRef::from_array_view(input).map_err(|source| {
+                        OcrError::runtime(
+                            RuntimeErrorKind::Execution,
+                            "failed to create ONNX input tensor",
+                        )
+                        .with_source(source)
+                    })?],
                     run_options.options(),
                 )
                 .map_err(|e| {
                     if cancellation.is_cancelled() {
                         crate::cancellation::OcrCancelled.into()
                     } else {
-                        anyhow::Error::new(e)
+                        OcrError::runtime(RuntimeErrorKind::Execution, "ONNX inference failed")
+                            .with_source(e)
                     }
                 })?;
-            let value = outputs
-                .values()
-                .next()
-                .context("ONNX model returned no outputs")?;
-            let view = value
-                .try_extract_array::<f32>()
-                .context("ONNX model output must be a float32 tensor")?;
-            validate_prediction_shape(view.shape(), &self.output_shape, input.shape()[0])?;
+            let value = outputs.values().next().ok_or_else(|| {
+                OcrError::model(
+                    ModelErrorKind::Incompatible,
+                    Some(&self.model_path),
+                    "ONNX model returned no outputs",
+                )
+            })?;
+            let view = value.try_extract_array::<f32>().map_err(|source| {
+                OcrError::model(
+                    ModelErrorKind::Incompatible,
+                    Some(&self.model_path),
+                    "ONNX model output must be a float32 tensor",
+                )
+                .with_source(source)
+            })?;
+            validate_prediction_shape(view.shape(), &self.output_shape, input.shape()[0])
+                .map_err(|error| error.with_model_path(&self.model_path))?;
             cancellation.checkpoint()?;
             view.to_owned()
         };
@@ -146,7 +185,9 @@ fn validate_model_tensor(
         "ONNX {label} '{}' must be a float32 tensor, got {dtype:?}",
         outlet.name()
     );
-    let shape = dtype.tensor_shape().context("ONNX value is not a tensor")?;
+    let shape = dtype
+        .tensor_shape()
+        .ok_or_else(|| OcrError::incompatible_model("ONNX value is not a tensor"))?;
     ensure!(
         shape.len() == expected.len(),
         "ONNX {label} '{}' must have rank {}, got {shape}",
@@ -163,7 +204,7 @@ fn validate_model_tensor(
             if *actual < 0 {
                 return Ok(*expected);
             }
-            let actual = usize::try_from(*actual).context("ONNX dimension exceeds platform limits")?;
+            let actual = usize::try_from(*actual).map_err(|source| OcrError::incompatible_model("ONNX dimension exceeds platform limits").with_source(source))?;
             if let Some(expected) = expected {
                 ensure!(
                     actual == *expected,
@@ -173,6 +214,29 @@ fn validate_model_tensor(
             Ok(Some(actual))
         })
         .collect()
+}
+
+fn session_configuration_error(source: impl Into<ort::Error>) -> OcrError {
+    OcrError::runtime(
+        RuntimeErrorKind::SessionConfiguration,
+        "failed to configure ONNX session",
+    )
+    .with_source(source.into())
+}
+
+fn model_load_error(path: &Path, source: ort::Error) -> OcrError {
+    use ort::ErrorCode;
+    let message = format!("failed to load ONNX model {}", path.display());
+    let error = match source.code() {
+        ErrorCode::NoSuchFile | ErrorCode::NoModel => {
+            OcrError::model(ModelErrorKind::NotFound, Some(path), message)
+        }
+        ErrorCode::InvalidArgument | ErrorCode::InvalidProtobuf | ErrorCode::InvalidGraph => {
+            OcrError::model(ModelErrorKind::Incompatible, Some(path), message)
+        }
+        _ => OcrError::runtime(RuntimeErrorKind::SessionConfiguration, message),
+    };
+    error.with_source(source)
 }
 
 fn validate_tensor_shape(actual: &[usize], expected: &[Option<usize>], label: &str) -> Result<()> {

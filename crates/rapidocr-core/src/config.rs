@@ -3,14 +3,108 @@
 //! The configuration can be serialized as TOML and is shared by the library API
 //! and the CLI. Stage-specific configs are required only when the corresponding
 //! [`PipelineConfig`] flag is enabled.
+//!
+//! For deployments, select schema and path policies explicitly:
+//!
+//! ```no_run
+//! use rapidocr_core::config::{ConfigLoadOptions, RapidOcrConfig};
+//! # fn main() -> rapidocr_core::OcrResult<()> {
+//! let config = RapidOcrConfig::from_toml_file_with_options(
+//!     "settings/ocr.toml", &ConfigLoadOptions::new(),
+//! )?;
+//! // Strict parsing; model and dictionary paths follow settings/ocr.toml.
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! The original `from_toml_file` and `from_toml_str` methods retain permissive
+//! parsing, legacy top-level flag precedence, and paths as written.
 
 use std::{
     fs,
     path::{Path, PathBuf},
 };
 
-use anyhow::{bail, ensure, Context, Result};
 use serde::{Deserialize, Serialize};
+
+use crate::error::{
+    ensure_config as ensure, ConfigErrorKind, OcrError, OcrResult as Result, ResultExt,
+};
+
+/// TOML schema and legacy pipeline-flag handling.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ConfigParseMode {
+    /// Reject unknown fields and contradictory legacy/nested pipeline flags.
+    /// Legacy flags alone, or equal aliases, remain accepted.
+    Strict,
+    /// Ignore unknown fields and let legacy top-level flags override `[pipeline]`.
+    Compatible,
+}
+
+/// Base used to resolve model and recognition-dictionary paths.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ModelPathBase {
+    /// Keep paths as written; relative paths follow the working directory at use time.
+    AsProvided,
+    /// Resolve relative paths against the working directory at load time.
+    WorkingDirectory,
+    /// Resolve relative paths against the directory containing the TOML file.
+    ConfigDirectory,
+    /// Resolve relative paths against this explicit directory.
+    Directory(PathBuf),
+}
+
+/// Explicit parsing and path policy for loading a configuration file.
+///
+/// The default is strict parsing with paths rooted at the configuration file's
+/// directory. [`ConfigLoadOptions::compatible`] preserves the original loader's
+/// permissive parsing and unresolved paths.
+#[derive(Debug, Clone)]
+#[non_exhaustive]
+pub struct ConfigLoadOptions {
+    /// Schema and legacy-flag policy.
+    pub parse_mode: ConfigParseMode,
+    /// Base for all configured model and dictionary paths, including disabled stages.
+    pub model_path_base: ModelPathBase,
+}
+
+impl ConfigLoadOptions {
+    /// Uses strict parsing and the configuration file's directory as the path base.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Preserves unknown-field tolerance, legacy overrides, and paths as written.
+    pub fn compatible() -> Self {
+        Self {
+            parse_mode: ConfigParseMode::Compatible,
+            model_path_base: ModelPathBase::AsProvided,
+        }
+    }
+
+    /// Replaces the parsing policy.
+    pub fn with_parse_mode(mut self, mode: ConfigParseMode) -> Self {
+        self.parse_mode = mode;
+        self
+    }
+
+    /// Replaces the model and dictionary path base.
+    pub fn with_model_path_base(mut self, base: ModelPathBase) -> Self {
+        self.model_path_base = base;
+        self
+    }
+}
+
+impl Default for ConfigLoadOptions {
+    fn default() -> Self {
+        Self {
+            parse_mode: ConfigParseMode::Strict,
+            model_path_base: ModelPathBase::ConfigDirectory,
+        }
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[non_exhaustive]
@@ -70,13 +164,56 @@ impl RapidOcrConfig {
         crate::model::PPOCRV6_SMALL.config(model_dir)
     }
 
-    /// Reads and validates a TOML configuration file.
+    /// Reads and validates a TOML configuration file using the compatibility policy.
+    ///
+    /// Unknown fields are ignored, legacy flags override `[pipeline]`, and model
+    /// paths remain as written (relative to the working directory at use time).
+    /// Prefer [`Self::from_toml_file_with_options`] for an explicit deployment policy.
     pub fn from_toml_file(path: impl AsRef<Path>) -> Result<Self> {
+        Self::from_toml_file_with_options(path, &ConfigLoadOptions::compatible())
+    }
+
+    /// Reads a TOML file strictly, keeping model paths as written.
+    pub fn from_toml_file_strict(path: impl AsRef<Path>) -> Result<Self> {
+        Self::from_toml_file_with_options(
+            path,
+            &ConfigLoadOptions::new().with_model_path_base(ModelPathBase::AsProvided),
+        )
+    }
+
+    /// Reads a TOML file with explicit schema and model-path policies.
+    ///
+    /// Resolved paths are absolute without checking asset existence. This allows
+    /// loading configuration before downloading models. Absolute asset paths are
+    /// preserved; relative explicit base directories follow the current directory.
+    pub fn from_toml_file_with_options(
+        path: impl AsRef<Path>,
+        options: &ConfigLoadOptions,
+    ) -> Result<Self> {
         let path = path.as_ref();
-        let content = fs::read_to_string(path)
-            .with_context(|| format!("failed to read config {}", path.display()))?;
-        Self::from_toml_str(&content)
-            .with_context(|| format!("failed to load config {}", path.display()))
+        let content = fs::read_to_string(path).map_err(|source| {
+            OcrError::config(
+                ConfigErrorKind::Io,
+                None,
+                format!("failed to read config {}", path.display()),
+            )
+            .with_source(source)
+        })?;
+        let mut config = Self::parse_toml(&content, options.parse_mode)
+            .with_context(|| format!("failed to load config {}", path.display()))?;
+        match &options.model_path_base {
+            ModelPathBase::AsProvided => {}
+            ModelPathBase::WorkingDirectory => config.resolve_model_paths(".")?,
+            ModelPathBase::ConfigDirectory => {
+                config.resolve_model_paths(
+                    path.parent()
+                        .filter(|path| !path.as_os_str().is_empty())
+                        .unwrap_or(Path::new(".")),
+                )?;
+            }
+            ModelPathBase::Directory(base) => config.resolve_model_paths(base)?,
+        }
+        Ok(config)
     }
 
     /// Parses and validates a TOML configuration string.
@@ -84,8 +221,37 @@ impl RapidOcrConfig {
     /// Legacy top-level `use_det`, `use_cls`, and `use_rec` fields are accepted
     /// and mapped into the nested [`PipelineConfig`].
     pub fn from_toml_str(content: &str) -> Result<Self> {
-        let mut parsed: RapidOcrConfigFile =
-            toml::from_str(content).context("failed to parse config TOML")?;
+        Self::parse_toml(content, ConfigParseMode::Compatible)
+    }
+
+    /// Parses TOML strictly, rejecting unknown fields at every configuration level.
+    ///
+    /// Legacy top-level flags remain accepted. If a flag is also explicitly
+    /// present in `[pipeline]`, both values must agree. Paths remain as written.
+    pub fn from_toml_str_strict(content: &str) -> Result<Self> {
+        Self::parse_toml(content, ConfigParseMode::Strict)
+    }
+
+    /// Parses TOML strictly and resolves all relative model/dictionary paths
+    /// against an explicit directory, without requiring the assets to exist.
+    pub fn from_toml_str_with_base(content: &str, base: impl AsRef<Path>) -> Result<Self> {
+        let mut config = Self::from_toml_str_strict(content)?;
+        config.resolve_model_paths(base)?;
+        Ok(config)
+    }
+
+    fn parse_toml(content: &str, mode: ConfigParseMode) -> Result<Self> {
+        if mode == ConfigParseMode::Strict {
+            let value: toml::Value = toml::from_str(content).map_err(|source| {
+                OcrError::config(ConfigErrorKind::Parse, None, "failed to parse config TOML")
+                    .with_source(source)
+            })?;
+            validate_strict_schema(&value)?;
+        }
+        let mut parsed: RapidOcrConfigFile = toml::from_str(content).map_err(|source| {
+            OcrError::config(ConfigErrorKind::Parse, None, "failed to parse config TOML")
+                .with_source(source)
+        })?;
 
         if let Some(use_det) = parsed.use_det {
             parsed.cfg.pipeline.use_det = use_det;
@@ -101,22 +267,82 @@ impl RapidOcrConfig {
         Ok(parsed.cfg)
     }
 
+    /// Resolves all configured model and dictionary paths against `base`.
+    ///
+    /// Relative bases follow the current directory. Absolute asset paths are
+    /// unchanged, and missing assets are allowed. No changes are applied if any
+    /// path fails resolution; disabled stages are resolved as well.
+    pub fn resolve_model_paths(&mut self, base: impl AsRef<Path>) -> Result<()> {
+        let base = absolute_base(base.as_ref())?;
+        let det = self
+            .det
+            .as_ref()
+            .map(|cfg| resolve_path(&cfg.model_path, &base, "det.model_path"))
+            .transpose()?;
+        let cls = self
+            .cls
+            .as_ref()
+            .map(|cfg| resolve_path(&cfg.model_path, &base, "cls.model_path"))
+            .transpose()?;
+        let rec = self
+            .rec
+            .as_ref()
+            .map(|cfg| -> Result<(PathBuf, PathBuf)> {
+                Ok((
+                    resolve_path(&cfg.model_path, &base, "rec.model_path")?,
+                    resolve_path(&cfg.dict_path, &base, "rec.dict_path")?,
+                ))
+            })
+            .transpose()?;
+        if let (Some(cfg), Some(path)) = (&mut self.det, det) {
+            cfg.model_path = path;
+        }
+        if let (Some(cfg), Some(path)) = (&mut self.cls, cls) {
+            cfg.model_path = path;
+        }
+        if let (Some(cfg), Some((model, dict))) = (&mut self.rec, rec) {
+            cfg.model_path = model;
+            cfg.dict_path = dict;
+        }
+        Ok(())
+    }
+
     /// Writes this configuration as pretty TOML after validation.
     pub fn write_toml_file(&self, path: impl AsRef<Path>) -> Result<()> {
         let path = path.as_ref();
         self.validate().context("invalid OCR config")?;
         if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)
-                .with_context(|| format!("failed to create config dir {}", parent.display()))?;
+            fs::create_dir_all(parent).map_err(|source| {
+                OcrError::config(
+                    ConfigErrorKind::Io,
+                    None,
+                    format!("failed to create config dir {}", parent.display()),
+                )
+                .with_source(source)
+            })?;
         }
         let content = self.to_toml_string()?;
-        fs::write(path, content).with_context(|| format!("failed to write {}", path.display()))
+        fs::write(path, content).map_err(|source| {
+            OcrError::config(
+                ConfigErrorKind::Io,
+                None,
+                format!("failed to write {}", path.display()),
+            )
+            .with_source(source)
+        })
     }
 
     /// Serializes this configuration as pretty TOML after validation.
     pub fn to_toml_string(&self) -> Result<String> {
         self.validate().context("invalid OCR config")?;
-        toml::to_string_pretty(self).context("failed to serialize config")
+        toml::to_string_pretty(self).map_err(|source| {
+            OcrError::config(
+                ConfigErrorKind::Serialization,
+                None,
+                "failed to serialize config",
+            )
+            .with_source(source)
+        })
     }
 
     /// Validates field ranges and enabled-stage requirements.
@@ -140,19 +366,25 @@ impl RapidOcrConfig {
         if self.pipeline.use_det {
             self.det
                 .as_ref()
-                .context("pipeline.use_det is true but [det] config is missing")?
+                .ok_or_else(|| {
+                    OcrError::invalid_config("pipeline.use_det is true but [det] config is missing")
+                })?
                 .validate()?;
         }
         if self.pipeline.use_cls {
             self.cls
                 .as_ref()
-                .context("pipeline.use_cls is true but [cls] config is missing")?
+                .ok_or_else(|| {
+                    OcrError::invalid_config("pipeline.use_cls is true but [cls] config is missing")
+                })?
                 .validate()?;
         }
         if self.pipeline.use_rec {
             self.rec
                 .as_ref()
-                .context("pipeline.use_rec is true but [rec] config is missing")?
+                .ok_or_else(|| {
+                    OcrError::invalid_config("pipeline.use_rec is true but [rec] config is missing")
+                })?
                 .validate()?;
         }
 
@@ -341,10 +573,12 @@ impl PipelineConfig {
     /// Validates stage combinations.
     pub fn validate(&self) -> Result<()> {
         if !self.use_det && !self.use_rec {
-            bail!("at least one of pipeline.use_det or pipeline.use_rec must be true");
+            return Err(OcrError::invalid_config(
+                "at least one of pipeline.use_det or pipeline.use_rec must be true",
+            ));
         }
         if self.use_cls && !self.use_rec {
-            bail!("pipeline.use_cls requires pipeline.use_rec because cls only rotates recognition crops");
+            return Err(OcrError::invalid_config("pipeline.use_cls requires pipeline.use_rec because cls only rotates recognition crops"));
         }
         Ok(())
     }
@@ -710,6 +944,193 @@ struct RapidOcrConfigFile {
     use_cls: Option<bool>,
     #[serde(default)]
     use_rec: Option<bool>,
+}
+
+// Keep these field lists in sync with the serializable configuration types.
+// Checking the TOML tree also catches unknown fields in disabled stages and
+// avoids serde's flatten/deny_unknown_fields interaction with legacy flags.
+fn validate_strict_schema(value: &toml::Value) -> Result<()> {
+    check_table_fields(
+        value,
+        "",
+        &[
+            "pipeline",
+            "inference",
+            "text_score",
+            "min_side_len",
+            "max_side_len",
+            "min_height",
+            "width_height_ratio",
+            "det",
+            "cls",
+            "rec",
+            "use_det",
+            "use_cls",
+            "use_rec",
+        ],
+    )?;
+    for (name, fields) in [
+        ("pipeline", &["use_det", "use_cls", "use_rec"][..]),
+        (
+            "inference",
+            &[
+                "intra_threads",
+                "inter_threads",
+                "parallel_execution",
+                "enable_cpu_mem_arena",
+                "execution_provider",
+            ][..],
+        ),
+        (
+            "det",
+            &[
+                "model_path",
+                "limit_side_len",
+                "limit_type",
+                "input_limits",
+                "mean",
+                "std",
+                "thresh",
+                "box_thresh",
+                "max_candidates",
+                "unclip_ratio",
+                "min_size",
+            ][..],
+        ),
+        (
+            "cls",
+            &[
+                "model_path",
+                "image_shape",
+                "batch_size",
+                "thresh",
+                "labels",
+            ][..],
+        ),
+        (
+            "rec",
+            &[
+                "model_path",
+                "dict_path",
+                "image_shape",
+                "batch_size",
+                "input_limits",
+            ][..],
+        ),
+    ] {
+        if let Some(section) = value.get(name) {
+            check_table_fields(section, name, fields)?;
+        }
+    }
+    for (stage, fields) in [
+        (
+            "det",
+            &["max_side_len", "max_pixels", "overflow_behavior"][..],
+        ),
+        ("rec", &["max_width", "max_batch_pixels"][..]),
+    ] {
+        if let Some(limits) = value
+            .get(stage)
+            .and_then(|section| section.get("input_limits"))
+        {
+            check_table_fields(limits, &format!("{stage}.input_limits"), fields)?;
+        }
+    }
+    for name in ["use_det", "use_cls", "use_rec"] {
+        let legacy = value.get(name).and_then(toml::Value::as_bool);
+        let nested = value
+            .get("pipeline")
+            .and_then(|pipeline| pipeline.get(name))
+            .and_then(toml::Value::as_bool);
+        if let (Some(legacy), Some(nested)) = (legacy, nested) {
+            if legacy != nested {
+                return Err(OcrError::config(
+                    ConfigErrorKind::ConflictingField,
+                    Some(format!("pipeline.{name}")),
+                    format!("conflicting {name}={legacy} and pipeline.{name}={nested}; use one spelling or equal values"),
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn check_table_fields(value: &toml::Value, prefix: &str, allowed: &[&str]) -> Result<()> {
+    if let Some(table) = value.as_table() {
+        for key in table.keys() {
+            if !allowed.contains(&key.as_str()) {
+                let field = if prefix.is_empty() {
+                    key.clone()
+                } else {
+                    format!("{prefix}.{key}")
+                };
+                return Err(OcrError::config(
+                    ConfigErrorKind::UnknownField,
+                    Some(field.clone()),
+                    format!("unknown configuration field {field:?}"),
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn absolute_base(base: &Path) -> Result<PathBuf> {
+    if base.as_os_str().is_empty() {
+        return Err(OcrError::config(
+            ConfigErrorKind::PathResolution,
+            None,
+            "model path base must not be empty",
+        ));
+    }
+    if base.is_absolute() {
+        return Ok(base.to_path_buf());
+    }
+    reject_ambiguous_relative_path(base, None)?;
+    std::env::current_dir()
+        .map(|cwd| cwd.join(base))
+        .map_err(|source| {
+            OcrError::config(
+                ConfigErrorKind::PathResolution,
+                None,
+                "failed to determine working directory for model path resolution",
+            )
+            .with_source(source)
+        })
+}
+
+fn resolve_path(path: &Path, base: &Path, field: &str) -> Result<PathBuf> {
+    if path.as_os_str().is_empty() {
+        return Err(OcrError::config(
+            ConfigErrorKind::PathResolution,
+            Some(field.to_owned()),
+            format!("{field} must not be empty"),
+        ));
+    }
+    if path.is_absolute() {
+        return Ok(path.to_path_buf());
+    }
+    reject_ambiguous_relative_path(path, Some(field))?;
+    Ok(base.join(path))
+}
+
+fn reject_ambiguous_relative_path(path: &Path, field: Option<&str>) -> Result<()> {
+    if path.components().any(|component| {
+        matches!(
+            component,
+            std::path::Component::Prefix(_) | std::path::Component::RootDir
+        )
+    }) {
+        return Err(OcrError::config(
+            ConfigErrorKind::PathResolution,
+            field.map(str::to_owned),
+            format!(
+                "path {} must be absolute or relative without a drive/root prefix",
+                path.display()
+            ),
+        ));
+    }
+    Ok(())
 }
 
 // TOML has no null value. Omitting a disabled limit would restore the safe

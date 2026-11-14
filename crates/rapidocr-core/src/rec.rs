@@ -1,12 +1,15 @@
 use std::{fs, path::Path, time::Instant};
 
-use anyhow::{bail, ensure, Context, Result};
 use image::{Rgb, RgbImage};
 use ndarray::{s, Array4, Ix3};
 
 use crate::{
     cancellation::OcrCancellationToken,
     config::{InferenceOptions, RecConfig},
+    error::{
+        InputLimitKind, ModelErrorKind, OcrError, OcrResult as Result, OcrStage, ResultExt,
+        RuntimeErrorKind,
+    },
     inference::OnnxSession,
     types::{OcrTimings, RecText},
     OcrRuntime,
@@ -106,7 +109,11 @@ impl TextRecognizer {
             timings.rec_inference_ms += elapsed_ms(start);
 
             let start = Instant::now();
-            let pred = pred.into_dimensionality::<Ix3>()?;
+            let pred = pred.into_dimensionality::<Ix3>().map_err(|source| {
+                OcrError::incompatible_model("recognition output must have rank 3")
+                    .with_model_path(&self.cfg.model_path)
+                    .with_source(source)
+            })?;
             for i in 0..pred.shape()[0] {
                 cancellation.checkpoint()?;
                 results[chunk[i]] = Some(self.decode_one(pred.slice(s![i, .., ..]))?);
@@ -117,7 +124,12 @@ impl TextRecognizer {
             .into_iter()
             .enumerate()
             .map(|(idx, result)| {
-                result.with_context(|| format!("recognition result missing for crop {idx}"))
+                result.ok_or_else(|| {
+                    OcrError::runtime(
+                        RuntimeErrorKind::Execution,
+                        format!("recognition result missing for crop {idx}"),
+                    )
+                })
             })
             .collect::<Result<Vec<_>>>()?;
         Ok(RecognizeResult {
@@ -134,7 +146,9 @@ impl TextRecognizer {
     ) -> Result<ndarray::Array3<f32>> {
         let [channels, img_h, _] = self.cfg.image_shape;
         if channels != 3 {
-            bail!("only 3-channel recognition input is supported");
+            return Err(OcrError::invalid_config(
+                "only 3-channel recognition input is supported",
+            ));
         }
         let img_w = (img_h as f32 * max_wh_ratio) as usize;
         let ratio = img.width() as f32 / img.height().max(1) as f32;
@@ -164,10 +178,12 @@ impl TextRecognizer {
                 .max_by(|(_, a), (_, b)| a.total_cmp(b))
                 .map(|(idx, prob)| (idx, *prob))
                 .unwrap_or((0, 0.0));
-            ensure!(
-                prob.is_finite(),
-                "recognition output contains a non-finite confidence"
-            );
+            if !prob.is_finite() {
+                return Err(OcrError::incompatible_model(
+                    "recognition output contains a non-finite confidence",
+                )
+                .with_model_path(&self.cfg.model_path));
+            }
 
             // CTC decode: index 0 is blank and repeated non-blank labels collapse
             // into a single character.
@@ -176,8 +192,11 @@ impl TextRecognizer {
                 continue;
             }
 
-            let ch = self.characters.get(idx).with_context(|| {
-                format!("recognition class {idx} is not present in the dictionary")
+            let ch = self.characters.get(idx).ok_or_else(|| {
+                OcrError::incompatible_model(format!(
+                    "recognition class {idx} is not present in the dictionary"
+                ))
+                .with_model_path(&self.cfg.dict_path)
             })?;
             text.push_str(ch);
             confs.push(prob);
@@ -204,22 +223,54 @@ fn validate_batch_allocation(cfg: &RecConfig, batch_size: usize, width: usize) -
     let pixels = batch_size
         .checked_mul(height)
         .and_then(|size| size.checked_mul(width))
-        .context("recognition batch dimensions overflow platform limits")?;
+        .ok_or_else(|| {
+            OcrError::input_limit(
+                OcrStage::Recognition,
+                InputLimitKind::Dimensions,
+                None,
+                Some(usize::MAX as u64),
+                "recognition batch dimensions overflow platform limits",
+            )
+        })?;
     let bytes = pixels
         .checked_mul(channels)
         .and_then(|size| size.checked_mul(std::mem::size_of::<f32>()))
-        .context("recognition tensor allocation exceeds platform limits")?;
-    ensure!(
-        width > 0 && width <= u32::MAX as usize && bytes <= isize::MAX as usize,
-        "recognition tensor dimensions exceed platform limits"
-    );
+        .ok_or_else(|| {
+            OcrError::input_limit(
+                OcrStage::Recognition,
+                InputLimitKind::TensorBytes,
+                None,
+                Some(isize::MAX as u64),
+                "recognition tensor allocation exceeds platform limits",
+            )
+        })?;
+    if width == 0 || width > u32::MAX as usize {
+        return Err(OcrError::input_limit(
+            OcrStage::Recognition,
+            InputLimitKind::Dimensions,
+            Some(width as u64),
+            Some(u64::from(u32::MAX)),
+            "recognition tensor dimensions exceed platform limits",
+        ));
+    }
+    if bytes > isize::MAX as usize {
+        return Err(OcrError::input_limit(
+            OcrStage::Recognition,
+            InputLimitKind::TensorBytes,
+            Some(bytes as u64),
+            Some(isize::MAX as u64),
+            "recognition tensor dimensions exceed platform limits",
+        ));
+    }
     if let Some(max_width) = cfg.input_limits.max_width {
-        ensure!(width <= max_width as usize,
-            "recognition batch width {width} exceeds rec.input_limits.max_width={max_width}; tile long text lines, raise the limit, or explicitly use RecInputLimits::unrestricted()");
+        if width > max_width as usize {
+            return Err(OcrError::input_limit(OcrStage::Recognition, InputLimitKind::Width, Some(width as u64), Some(u64::from(max_width)), format!("recognition batch width {width} exceeds rec.input_limits.max_width={max_width}; tile long text lines, raise the limit, or explicitly use RecInputLimits::unrestricted()")));
+        }
     }
     if let Some(max_pixels) = cfg.input_limits.max_batch_pixels {
-        ensure!(pixels as u64 <= max_pixels,
-            "recognition batch requests {pixels} padded pixels, exceeding rec.input_limits.max_batch_pixels={max_pixels}; reduce rec.batch_size or raise the limit");
+        if pixels as u64 > max_pixels {
+            return Err(OcrError::input_limit(OcrStage::Recognition, InputLimitKind::BatchPixelCount, Some(pixels as u64), Some(max_pixels), format!("recognition batch requests {pixels} padded pixels, exceeding rec.input_limits.max_batch_pixels={max_pixels}; reduce rec.batch_size or raise the limit")));
+        }
     }
     Ok(())
 }
@@ -289,10 +340,25 @@ fn elapsed_ms(start: Instant) -> f64 {
 }
 
 fn read_character_file(path: &Path) -> Result<Vec<String>> {
-    let content = fs::read_to_string(path)
-        .with_context(|| format!("failed to read recognition dictionary {}", path.display()))?;
+    let content = fs::read_to_string(path).map_err(|source| {
+        let kind = if source.kind() == std::io::ErrorKind::NotFound {
+            ModelErrorKind::NotFound
+        } else {
+            ModelErrorKind::Io
+        };
+        OcrError::model(
+            kind,
+            Some(path),
+            format!("failed to read recognition dictionary {}", path.display()),
+        )
+        .with_source(source)
+    })?;
     if content.trim().is_empty() {
-        bail!("recognition dictionary {} is empty", path.display());
+        return Err(OcrError::model(
+            ModelErrorKind::Incompatible,
+            Some(path),
+            format!("recognition dictionary {} is empty", path.display()),
+        ));
     }
     let mut chars = Vec::new();
     chars.push("blank".to_string());
@@ -323,12 +389,30 @@ mod tests {
         assert!(error
             .to_string()
             .contains("exceeding rec.input_limits.max_batch_pixels"));
+        assert!(matches!(
+            error,
+            OcrError::InputLimit {
+                stage: OcrStage::Recognition,
+                kind: InputLimitKind::BatchPixelCount,
+                requested: Some(30720),
+                limit: Some(15360),
+                ..
+            }
+        ));
     }
 
     #[test]
     fn unrestricted_recognition_still_rejects_tensor_size_overflow() {
         let cfg = RecConfig::new("rec.onnx", "dict.txt", [3, 48, 320], 6)
             .with_input_limits(RecInputLimits::unrestricted());
-        assert!(validate_batch_allocation(&cfg, usize::MAX, 320).is_err());
+        assert!(matches!(
+            validate_batch_allocation(&cfg, usize::MAX, 320).unwrap_err(),
+            OcrError::InputLimit {
+                stage: OcrStage::Recognition,
+                kind: InputLimitKind::Dimensions,
+                requested: None,
+                ..
+            }
+        ));
     }
 }
