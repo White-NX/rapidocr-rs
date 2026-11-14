@@ -1,6 +1,6 @@
 use std::{fs, path::Path, time::Instant};
 
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, ensure, Context, Result};
 use image::{Rgb, RgbImage};
 use ndarray::{s, Array4, Ix3};
 
@@ -9,6 +9,7 @@ use crate::{
     config::{InferenceOptions, RecConfig},
     inference::OnnxSession,
     types::{OcrTimings, RecText},
+    OcrRuntime,
 };
 
 pub(crate) struct TextRecognizer {
@@ -18,15 +19,26 @@ pub(crate) struct TextRecognizer {
 }
 
 impl TextRecognizer {
-    pub(crate) fn new(cfg: RecConfig, inference: InferenceOptions) -> Result<Self> {
+    pub(crate) fn new(
+        cfg: RecConfig,
+        inference: InferenceOptions,
+        runtime: Option<&OcrRuntime>,
+    ) -> Result<Self> {
         cfg.validate().context("invalid recognition config")?;
-        let session = OnnxSession::new(&cfg.model_path, inference, false).with_context(|| {
+        let characters = read_character_file(&cfg.dict_path)?;
+        let session = OnnxSession::new(
+            &cfg.model_path,
+            inference,
+            [None, Some(3), Some(cfg.image_shape[1]), None],
+            &[None, None, Some(characters.len())],
+            runtime,
+        )
+        .with_context(|| {
             format!(
                 "failed to load recognition model {}",
                 cfg.model_path.display()
             )
         })?;
-        let characters = read_character_file(&cfg.dict_path)?;
         Ok(Self {
             cfg,
             session,
@@ -72,6 +84,8 @@ impl TextRecognizer {
             // PaddleOCR recognition batches are padded to the widest crop in the
             // batch while preserving the configured input height.
             let batch_w = (self.cfg.image_shape[1] as f32 * max_wh_ratio) as usize;
+            validate_batch_allocation(&self.cfg, chunk.len(), batch_w)?;
+            let start = Instant::now();
             let mut batch = Array4::<f32>::zeros((
                 chunk.len(),
                 self.cfg.image_shape[0],
@@ -79,7 +93,6 @@ impl TextRecognizer {
                 batch_w,
             ));
 
-            let start = Instant::now();
             for (i, idx) in chunk.iter().enumerate() {
                 cancellation.checkpoint()?;
                 let img = &imgs[*idx];
@@ -151,6 +164,10 @@ impl TextRecognizer {
                 .max_by(|(_, a), (_, b)| a.total_cmp(b))
                 .map(|(idx, prob)| (idx, *prob))
                 .unwrap_or((0, 0.0));
+            ensure!(
+                prob.is_finite(),
+                "recognition output contains a non-finite confidence"
+            );
 
             // CTC decode: index 0 is blank and repeated non-blank labels collapse
             // into a single character.
@@ -159,10 +176,11 @@ impl TextRecognizer {
                 continue;
             }
 
-            if let Some(ch) = self.characters.get(idx) {
-                text.push_str(ch);
-                confs.push(prob);
-            }
+            let ch = self.characters.get(idx).with_context(|| {
+                format!("recognition class {idx} is not present in the dictionary")
+            })?;
+            text.push_str(ch);
+            confs.push(prob);
             last_idx = idx;
         }
 
@@ -179,6 +197,31 @@ impl TextRecognizer {
 pub(crate) struct RecognizeResult {
     pub(crate) texts: Vec<RecText>,
     pub(crate) timings: OcrTimings,
+}
+
+fn validate_batch_allocation(cfg: &RecConfig, batch_size: usize, width: usize) -> Result<()> {
+    let [channels, height, _] = cfg.image_shape;
+    let pixels = batch_size
+        .checked_mul(height)
+        .and_then(|size| size.checked_mul(width))
+        .context("recognition batch dimensions overflow platform limits")?;
+    let bytes = pixels
+        .checked_mul(channels)
+        .and_then(|size| size.checked_mul(std::mem::size_of::<f32>()))
+        .context("recognition tensor allocation exceeds platform limits")?;
+    ensure!(
+        width > 0 && width <= u32::MAX as usize && bytes <= isize::MAX as usize,
+        "recognition tensor dimensions exceed platform limits"
+    );
+    if let Some(max_width) = cfg.input_limits.max_width {
+        ensure!(width <= max_width as usize,
+            "recognition batch width {width} exceeds rec.input_limits.max_width={max_width}; tile long text lines, raise the limit, or explicitly use RecInputLimits::unrestricted()");
+    }
+    if let Some(max_pixels) = cfg.input_limits.max_batch_pixels {
+        ensure!(pixels as u64 <= max_pixels,
+            "recognition batch requests {pixels} padded pixels, exceeding rec.input_limits.max_batch_pixels={max_pixels}; reduce rec.batch_size or raise the limit");
+    }
+    Ok(())
 }
 
 fn resize_linear_opencv(
@@ -256,4 +299,36 @@ fn read_character_file(path: &Path) -> Result<Vec<String>> {
     chars.extend(content.lines().map(|line| line.trim_end().to_string()));
     chars.push(" ".to_string());
     Ok(chars)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::RecInputLimits;
+
+    #[test]
+    fn recognition_limits_reject_amplified_thin_inputs_before_allocation() {
+        let cfg = RecConfig::new("rec.onnx", "dict.txt", [3, 48, 320], 6);
+        let error = validate_batch_allocation(&cfg, 1, 48 * 200).unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("exceeds rec.input_limits.max_width=4096"));
+    }
+
+    #[test]
+    fn recognition_limits_bound_total_batch_pixels() {
+        let cfg = RecConfig::new("rec.onnx", "dict.txt", [3, 48, 320], 6)
+            .with_input_limits(RecInputLimits::new(None, Some(48 * 320)));
+        let error = validate_batch_allocation(&cfg, 2, 320).unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("exceeding rec.input_limits.max_batch_pixels"));
+    }
+
+    #[test]
+    fn unrestricted_recognition_still_rejects_tensor_size_overflow() {
+        let cfg = RecConfig::new("rec.onnx", "dict.txt", [3, 48, 320], 6)
+            .with_input_limits(RecInputLimits::unrestricted());
+        assert!(validate_batch_allocation(&cfg, usize::MAX, 320).is_err());
+    }
 }

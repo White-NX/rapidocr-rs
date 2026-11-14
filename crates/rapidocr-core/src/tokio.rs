@@ -21,12 +21,13 @@ use crate::{
     cancellation::{is_cancelled_error, OcrCancellationToken, OcrCancelled},
     config::RapidOcrConfig,
     types::TimedOcrOutput,
-    RapidOcr,
+    OcrRuntime, RapidOcr,
 };
 
 const DEFAULT_QUEUE_CAPACITY: usize = 1;
 
 #[derive(Debug, Error)]
+#[non_exhaustive]
 /// Errors produced by the Tokio OCR worker and its request tasks.
 pub enum TokioOcrError {
     /// The bounded request queue is full.
@@ -72,10 +73,16 @@ struct WorkerState {
 
 impl WorkerState {
     fn set_active(&self, cancellation: OcrCancellationToken) {
-        *self
+        let mut active = self
             .active
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(cancellation);
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        *active = Some(cancellation.clone());
+        // Shutdown may have happened after the worker's queue check but before
+        // this registration. Holding the active lock closes both interleavings.
+        if self.shutdown.load(Ordering::Acquire) {
+            cancellation.cancel();
+        }
     }
 
     fn clear_active(&self, cancellation: &OcrCancellationToken) {
@@ -130,6 +137,31 @@ impl TokioRapidOcr {
         config: RapidOcrConfig,
         queue_capacity: usize,
     ) -> Result<Self, TokioOcrError> {
+        Self::start_worker(config, queue_capacity, None).await
+    }
+
+    /// Starts a worker using the application's shared ONNX runtime.
+    pub async fn new_with_runtime(
+        config: RapidOcrConfig,
+        runtime: OcrRuntime,
+    ) -> Result<Self, TokioOcrError> {
+        Self::new_with_runtime_and_queue_capacity(config, runtime, DEFAULT_QUEUE_CAPACITY).await
+    }
+
+    /// Starts a worker with an explicit runtime and bounded queue capacity.
+    pub async fn new_with_runtime_and_queue_capacity(
+        config: RapidOcrConfig,
+        runtime: OcrRuntime,
+        queue_capacity: usize,
+    ) -> Result<Self, TokioOcrError> {
+        Self::start_worker(config, queue_capacity, Some(runtime)).await
+    }
+
+    async fn start_worker(
+        config: RapidOcrConfig,
+        queue_capacity: usize,
+        runtime: Option<OcrRuntime>,
+    ) -> Result<Self, TokioOcrError> {
         if queue_capacity == 0 {
             return Err(TokioOcrError::Ocr(anyhow!(
                 "Tokio OCR queue capacity must be greater than zero"
@@ -142,7 +174,7 @@ impl TokioRapidOcr {
         let worker_state = Arc::clone(&state);
         let worker = thread::Builder::new()
             .name("rapidocr-tokio-worker".to_string())
-            .spawn(move || worker_main(config, receiver, worker_state, init_sender))
+            .spawn(move || worker_main(config, runtime, receiver, worker_state, init_sender))
             .map_err(|error| TokioOcrError::Ocr(error.into()))?;
 
         match init_receiver.await {
@@ -353,11 +385,16 @@ fn map_response<T>(
 
 fn worker_main(
     config: RapidOcrConfig,
+    runtime: Option<OcrRuntime>,
     mut receiver: mpsc::Receiver<WorkerRequest>,
     state: Arc<WorkerState>,
     init_sender: oneshot::Sender<AnyResult<()>>,
 ) {
-    let mut ocr = match RapidOcr::new(config) {
+    let initialized = match runtime {
+        Some(runtime) => RapidOcr::new_with_runtime(config, &runtime),
+        None => RapidOcr::new(config),
+    };
+    let mut ocr = match initialized {
         Ok(ocr) => ocr,
         Err(error) => {
             let _ = init_sender.send(Err(error));
@@ -403,6 +440,15 @@ fn worker_main(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shutdown_cancels_a_request_registered_after_the_shutdown_check() {
+        let state = WorkerState::default();
+        let cancellation = OcrCancellationToken::new();
+        state.begin_shutdown();
+        state.set_active(cancellation.clone());
+        assert!(cancellation.is_cancelled());
+    }
 
     fn pending_task() -> (
         OcrTask<()>,

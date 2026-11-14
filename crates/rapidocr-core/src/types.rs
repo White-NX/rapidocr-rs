@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
 /// Four-point text box.
 ///
 /// Points are stored as `[x, y]` pairs. Public OCR output uses image pixel
@@ -13,6 +14,11 @@ pub struct Quad {
 }
 
 impl Quad {
+    /// Creates a quadrilateral from four `[x, y]` points.
+    pub const fn new(points: [[f32; 2]; 4]) -> Self {
+        Self { points }
+    }
+
     /// Creates an axis-aligned quadrilateral from inclusive corner coordinates.
     pub fn from_xyxy(x0: f32, y0: f32, x1: f32, y1: f32) -> Self {
         Self {
@@ -167,6 +173,7 @@ pub(crate) struct RecText {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
 /// One OCR result line.
 pub struct OcrLine {
     /// Detected or synthetic text box.
@@ -177,14 +184,39 @@ pub struct OcrLine {
     pub score: f32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+impl OcrLine {
+    /// Creates one recognized OCR line.
+    pub fn new(bbox: Quad, text: impl Into<String>, score: f32) -> Self {
+        Self {
+            bbox,
+            text: text.into(),
+            score,
+        }
+    }
+
+    /// Creates one detection-only OCR line with empty text and zero score.
+    pub fn detection_only(bbox: Quad) -> Self {
+        Self::new(bbox, String::new(), 0.0)
+    }
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[non_exhaustive]
 /// OCR output lines in reading order.
 pub struct OcrOutput {
     /// Recognized lines.
     pub lines: Vec<OcrLine>,
 }
 
+impl OcrOutput {
+    /// Creates an OCR output from lines in reading order.
+    pub fn new(lines: Vec<OcrLine>) -> Self {
+        Self { lines }
+    }
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[non_exhaustive]
 /// Millisecond timings for OCR stages.
 pub struct OcrTimings {
     /// Image decoding, EXIF orientation, and RGB conversion time.
@@ -264,12 +296,20 @@ impl OcrTimings {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
 /// OCR output paired with per-stage timings.
 pub struct TimedOcrOutput {
     /// Recognized OCR lines.
     pub output: OcrOutput,
     /// Timing breakdown in milliseconds.
     pub timings: OcrTimings,
+}
+
+impl TimedOcrOutput {
+    /// Creates an OCR output paired with its timing breakdown.
+    pub fn new(output: OcrOutput, timings: OcrTimings) -> Self {
+        Self { output, timings }
+    }
 }
 
 #[cfg(test)]

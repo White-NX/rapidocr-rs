@@ -6,6 +6,7 @@
 
 use std::{
     fs,
+    io::Read,
     path::{Path, PathBuf},
 };
 
@@ -13,6 +14,8 @@ use std::{
 use std::io::Write;
 
 use anyhow::{bail, Context, Result};
+#[cfg(feature = "model-download")]
+use fs2::FileExt;
 use sha2::{Digest, Sha256};
 
 use crate::config::{
@@ -106,6 +109,7 @@ const PPOCRV5_EN_DICT_SHA256: &str =
 pub const DEFAULT_MODEL_SET_NAME: &str = "ppocrv6-small";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 /// Kind of model asset in a registered model set.
 pub enum ModelAssetKind {
     /// Text detection ONNX model.
@@ -119,6 +123,7 @@ pub enum ModelAssetKind {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 /// Downloadable or cacheable model asset.
 pub struct ModelAssetSpec {
     /// Human-readable asset name used in errors.
@@ -133,7 +138,27 @@ pub struct ModelAssetSpec {
     pub sha256: Option<&'static str>,
 }
 
+impl ModelAssetSpec {
+    /// Creates a downloadable or cacheable model asset specification.
+    pub const fn new(
+        name: &'static str,
+        kind: ModelAssetKind,
+        filename: &'static str,
+        url: &'static str,
+        sha256: Option<&'static str>,
+    ) -> Self {
+        Self {
+            name,
+            kind,
+            filename,
+            url,
+            sha256,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[non_exhaustive]
 /// Complete detection-classification-recognition model set.
 pub struct ModelSetSpec {
     /// Stable model-set identifier.
@@ -149,6 +174,7 @@ pub struct ModelSetSpec {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[non_exhaustive]
 /// Detection model parameters for a registered model set.
 pub struct DetModelSpec {
     /// Detection ONNX asset.
@@ -173,7 +199,38 @@ pub struct DetModelSpec {
     pub min_size: u32,
 }
 
+impl DetModelSpec {
+    /// Creates detection model parameters for a model set.
+    #[allow(clippy::too_many_arguments)]
+    pub const fn new(
+        asset: ModelAssetSpec,
+        limit_side_len: u32,
+        limit_type: LimitType,
+        mean: [f32; 3],
+        std: [f32; 3],
+        thresh: f32,
+        box_thresh: f32,
+        max_candidates: usize,
+        unclip_ratio: f32,
+        min_size: u32,
+    ) -> Self {
+        Self {
+            asset,
+            limit_side_len,
+            limit_type,
+            mean,
+            std,
+            thresh,
+            box_thresh,
+            max_candidates,
+            unclip_ratio,
+            min_size,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[non_exhaustive]
 /// Text-line orientation classifier parameters for a registered model set.
 pub struct ClsModelSpec {
     /// Classification ONNX asset.
@@ -188,7 +245,27 @@ pub struct ClsModelSpec {
     pub labels: &'static [&'static str],
 }
 
+impl ClsModelSpec {
+    /// Creates classifier model parameters for a model set.
+    pub const fn new(
+        asset: ModelAssetSpec,
+        image_shape: [usize; 3],
+        batch_size: usize,
+        thresh: f32,
+        labels: &'static [&'static str],
+    ) -> Self {
+        Self {
+            asset,
+            image_shape,
+            batch_size,
+            thresh,
+            labels,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[non_exhaustive]
 /// Recognition model parameters for a registered model set.
 pub struct RecModelSpec {
     /// Recognition ONNX asset.
@@ -201,7 +278,41 @@ pub struct RecModelSpec {
     pub batch_size: usize,
 }
 
+impl RecModelSpec {
+    /// Creates recognition model parameters for a model set.
+    pub const fn new(
+        asset: ModelAssetSpec,
+        dict: ModelAssetSpec,
+        image_shape: [usize; 3],
+        batch_size: usize,
+    ) -> Self {
+        Self {
+            asset,
+            dict,
+            image_shape,
+            batch_size,
+        }
+    }
+}
+
 impl ModelSetSpec {
+    /// Creates a complete detection-classification-recognition model set.
+    pub const fn new(
+        name: &'static str,
+        family: &'static str,
+        det: DetModelSpec,
+        cls: ClsModelSpec,
+        rec: RecModelSpec,
+    ) -> Self {
+        Self {
+            name,
+            family,
+            det,
+            cls,
+            rec,
+        }
+    }
+
     /// Returns all assets in the model set.
     pub fn assets(&self) -> [ModelAssetSpec; 4] {
         [
@@ -231,46 +342,40 @@ impl ModelSetSpec {
     /// Builds a [`RapidOcrConfig`] with model paths rooted at `model_dir`.
     pub fn config(&self, model_dir: impl Into<PathBuf>) -> RapidOcrConfig {
         let model_dir = model_dir.into();
-        RapidOcrConfig {
-            pipeline: PipelineConfig::full(),
-            inference: Default::default(),
-            text_score: 0.5,
-            min_side_len: 30,
-            max_side_len: 2000,
-            min_height: 30,
-            width_height_ratio: 8.0,
-            det: Some(DetConfig {
-                model_path: model_dir.join(self.det.asset.filename),
-                limit_side_len: self.det.limit_side_len,
-                limit_type: self.det.limit_type,
-                input_limits: DetInputLimits::default(),
-                mean: self.det.mean,
-                std: self.det.std,
-                thresh: self.det.thresh,
-                box_thresh: self.det.box_thresh,
-                max_candidates: self.det.max_candidates,
-                unclip_ratio: self.det.unclip_ratio,
-                min_size: self.det.min_size,
-            }),
-            cls: Some(ClsConfig {
-                model_path: model_dir.join(self.cls.asset.filename),
-                image_shape: self.cls.image_shape,
-                batch_size: self.cls.batch_size,
-                thresh: self.cls.thresh,
-                labels: self
-                    .cls
+        RapidOcrConfig::new(
+            Some(
+                DetConfig::new(
+                    model_dir.join(self.det.asset.filename),
+                    self.det.limit_side_len,
+                    self.det.limit_type,
+                    self.det.mean,
+                    self.det.std,
+                    self.det.thresh,
+                    self.det.box_thresh,
+                    self.det.max_candidates,
+                    self.det.unclip_ratio,
+                    self.det.min_size,
+                )
+                .with_input_limits(DetInputLimits::default()),
+            ),
+            Some(ClsConfig::new(
+                model_dir.join(self.cls.asset.filename),
+                self.cls.image_shape,
+                self.cls.batch_size,
+                self.cls.thresh,
+                self.cls
                     .labels
                     .iter()
                     .map(|label| label.to_string())
                     .collect(),
-            }),
-            rec: Some(RecConfig {
-                model_path: model_dir.join(self.rec.asset.filename),
-                dict_path: model_dir.join(self.rec.dict.filename),
-                image_shape: self.rec.image_shape,
-                batch_size: self.rec.batch_size,
-            }),
-        }
+            )),
+            Some(RecConfig::new(
+                model_dir.join(self.rec.asset.filename),
+                model_dir.join(self.rec.dict.filename),
+                self.rec.image_shape,
+                self.rec.batch_size,
+            )),
+        )
     }
 }
 
@@ -589,6 +694,7 @@ pub fn model_set_by_name(name: &str) -> Option<&'static ModelSetSpec> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 /// Model-cache preparation mode.
 pub enum ModelDownloadMode {
     /// Download any missing asset.
@@ -678,7 +784,21 @@ impl ModelCache {
         fs::create_dir_all(&self.root)
             .with_context(|| format!("failed to create model cache {}", self.root.display()))?;
 
+        #[cfg(feature = "model-download")]
+        let mut download_lock = None;
+
         for asset in assets {
+            #[cfg(feature = "model-download")]
+            if mode == ModelDownloadMode::Missing
+                && !self.asset_path(asset).exists()
+                && download_lock.is_none()
+            {
+                // A cache-wide file lock keeps two RapidOCR processes from
+                // racing over the same `<filename>.part` path. Acquire it
+                // lazily so read-only cache validation does not create or
+                // write a lock file.
+                download_lock = Some(lock_model_cache(&self.root)?);
+            }
             self.ensure_asset(asset, mode)
                 .with_context(|| format!("failed to prepare {}", asset.name))?;
         }
@@ -715,28 +835,127 @@ pub fn ensure_ppocrv6_small_models(model_dir: impl AsRef<Path>) -> Result<PathBu
 
 #[cfg(feature = "model-download")]
 fn download_asset(asset: ModelAssetSpec, path: &Path) -> Result<()> {
+    let part_path = part_path(path);
+    if part_path.exists() {
+        fs::remove_file(&part_path).with_context(|| {
+            format!(
+                "failed to remove stale model part file {}",
+                part_path.display()
+            )
+        })?;
+    }
+
     let client = reqwest::blocking::Client::builder()
         .user_agent("Mozilla/5.0 rapidocr-rs")
         .build()
         .context("failed to build HTTP client")?;
-    let bytes = client
+    let mut response = client
         .get(asset.url)
         .send()
         .with_context(|| format!("failed to download {} from {}", asset.name, asset.url))?
         .error_for_status()
-        .with_context(|| format!("download returned an error for {}", asset.url))?
-        .bytes()
-        .with_context(|| format!("failed to read response body for {}", asset.url))?;
+        .with_context(|| format!("download returned an error for {}", asset.url))?;
 
-    let mut file = fs::File::create(path)
-        .with_context(|| format!("failed to create model file {}", path.display()))?;
-    file.write_all(&bytes)
-        .with_context(|| format!("failed to write model file {}", path.display()))?;
+    install_asset_from_reader(asset, path, &mut response)
+}
 
-    if let Some(expected) = asset.sha256 {
-        verify_sha256(path, expected)?;
+#[cfg(feature = "model-download")]
+fn lock_model_cache(root: &Path) -> Result<fs::File> {
+    let lock_path = root.join(".rapidocr-model-cache.lock");
+    let lock_file = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(&lock_path)
+        .with_context(|| format!("failed to open model cache lock {}", lock_path.display()))?;
+    lock_file
+        .lock_exclusive()
+        .with_context(|| format!("failed to lock model cache {}", root.display()))?;
+    Ok(lock_file)
+}
+
+#[cfg(feature = "model-download")]
+fn install_asset_from_reader(
+    asset: ModelAssetSpec,
+    path: &Path,
+    reader: &mut impl Read,
+) -> Result<()> {
+    let part_path = part_path(path);
+    if path.exists() {
+        let _ = fs::remove_file(&part_path);
+        bail!(
+            "refusing to replace existing model file {} while installing {}",
+            path.display(),
+            asset.name
+        );
     }
-    Ok(())
+
+    let result = (|| -> Result<()> {
+        if part_path.exists() {
+            fs::remove_file(&part_path).with_context(|| {
+                format!(
+                    "failed to remove stale model part file {}",
+                    part_path.display()
+                )
+            })?;
+        }
+        let mut file = fs::File::create(&part_path)
+            .with_context(|| format!("failed to create model part file {}", part_path.display()))?;
+        let mut hasher = Sha256::new();
+        let mut buffer = [0_u8; 64 * 1024];
+
+        loop {
+            let read = reader
+                .read(&mut buffer)
+                .with_context(|| format!("failed to read response body for {}", asset.url))?;
+            if read == 0 {
+                break;
+            }
+            file.write_all(&buffer[..read]).with_context(|| {
+                format!("failed to write model part file {}", part_path.display())
+            })?;
+            hasher.update(&buffer[..read]);
+        }
+
+        file.flush()
+            .with_context(|| format!("failed to flush model part file {}", part_path.display()))?;
+        file.sync_all()
+            .with_context(|| format!("failed to sync model part file {}", part_path.display()))?;
+
+        if let Some(expected) = asset.sha256 {
+            let actual = format!("{:x}", hasher.finalize());
+            if actual != expected {
+                bail!(
+                    "sha256 mismatch for {}: expected {}, got {}",
+                    path.display(),
+                    expected,
+                    actual
+                );
+            }
+        }
+
+        drop(file);
+        if path.exists() {
+            bail!(
+                "refusing to replace model file {} created while {} was downloading",
+                path.display(),
+                asset.name
+            );
+        }
+        fs::rename(&part_path, path).with_context(|| {
+            format!(
+                "failed to atomically install downloaded model {}",
+                path.display()
+            )
+        })?;
+        Ok(())
+    })();
+
+    if result.is_err() {
+        let _ = fs::remove_file(&part_path);
+    }
+    result
 }
 
 #[cfg(not(feature = "model-download"))]
@@ -749,9 +968,20 @@ fn download_asset(asset: ModelAssetSpec, path: &Path) -> Result<()> {
 }
 
 fn verify_sha256(path: &Path, expected: &str) -> Result<()> {
-    let bytes =
-        fs::read(path).with_context(|| format!("failed to read model file {}", path.display()))?;
-    let actual = format!("{:x}", Sha256::digest(&bytes));
+    let mut file = fs::File::open(path)
+        .with_context(|| format!("failed to open model file {}", path.display()))?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0_u8; 64 * 1024];
+    loop {
+        let read = file
+            .read(&mut buffer)
+            .with_context(|| format!("failed to read model file {}", path.display()))?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+    }
+    let actual = format!("{:x}", hasher.finalize());
     if actual != expected {
         bail!(
             "sha256 mismatch for {}: expected {}, got {}",
@@ -763,9 +993,28 @@ fn verify_sha256(path: &Path, expected: &str) -> Result<()> {
     Ok(())
 }
 
+#[cfg(feature = "model-download")]
+fn part_path(path: &Path) -> PathBuf {
+    let mut part = path.as_os_str().to_os_string();
+    part.push(".part");
+    PathBuf::from(part)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(feature = "model-download")]
+    use std::io::{Cursor, Error as IoError, ErrorKind};
+
+    #[cfg(feature = "model-download")]
+    const TEST_DOWNLOAD_ASSET: ModelAssetSpec = ModelAssetSpec::new(
+        "test model",
+        ModelAssetKind::Detection,
+        "test-model.onnx",
+        "https://example.invalid/test-model.onnx",
+        Some("03cfa25d83f5eaa1faac98ed6ceaaf0e7afe3c273a1e1502c2714ebe10b8263e"),
+    );
 
     #[test]
     fn ppocrv6_small_model_set_builds_default_config_paths() {
@@ -892,6 +1141,89 @@ mod tests {
         assert!(model_set_by_name("missing-model-set").is_none());
     }
 
+    #[cfg(feature = "model-download")]
+    #[test]
+    fn streamed_model_install_renames_verified_part_file() {
+        let root = temp_test_dir("successful-model-install");
+        let path = root.join(TEST_DOWNLOAD_ASSET.filename);
+        let mut reader = Cursor::new(b"verified model bytes".to_vec());
+
+        install_asset_from_reader(TEST_DOWNLOAD_ASSET, &path, &mut reader).unwrap();
+
+        assert_eq!(fs::read(&path).unwrap(), b"verified model bytes");
+        assert!(!part_path(&path).exists());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(feature = "model-download")]
+    #[test]
+    fn interrupted_model_install_removes_part_file() {
+        let root = temp_test_dir("interrupted-model-install");
+        let path = root.join(TEST_DOWNLOAD_ASSET.filename);
+        let mut reader = InterruptingReader::new(b"partial model bytes", 7);
+
+        let error = install_asset_from_reader(TEST_DOWNLOAD_ASSET, &path, &mut reader)
+            .unwrap_err()
+            .to_string();
+
+        assert!(error.contains("failed to read response body"));
+        assert!(!path.exists());
+        assert!(!part_path(&path).exists());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(feature = "model-download")]
+    #[test]
+    fn checksum_failure_removes_part_file() {
+        let root = temp_test_dir("checksum-model-install");
+        let path = root.join(TEST_DOWNLOAD_ASSET.filename);
+        let mut reader = Cursor::new(b"corrupted model bytes".to_vec());
+
+        let error = install_asset_from_reader(TEST_DOWNLOAD_ASSET, &path, &mut reader)
+            .unwrap_err()
+            .to_string();
+
+        assert!(error.contains("sha256 mismatch"));
+        assert!(!path.exists());
+        assert!(!part_path(&path).exists());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(feature = "model-download")]
+    #[test]
+    fn model_install_does_not_replace_existing_final_file() {
+        let root = temp_test_dir("existing-model-install");
+        let path = root.join(TEST_DOWNLOAD_ASSET.filename);
+        fs::write(&path, b"existing verified model").unwrap();
+        let mut reader = Cursor::new(b"verified model bytes".to_vec());
+
+        let error = install_asset_from_reader(TEST_DOWNLOAD_ASSET, &path, &mut reader)
+            .unwrap_err()
+            .to_string();
+
+        assert!(error.contains("refusing to replace existing model file"));
+        assert_eq!(fs::read(&path).unwrap(), b"existing verified model");
+        assert!(!part_path(&path).exists());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(feature = "model-download")]
+    #[test]
+    fn model_install_preserves_final_file_created_during_download() {
+        let root = temp_test_dir("racing-model-install");
+        let path = root.join(TEST_DOWNLOAD_ASSET.filename);
+        let mut reader = FinalFileCreatingReader::new(b"verified model bytes", &path);
+
+        let error = install_asset_from_reader(TEST_DOWNLOAD_ASSET, &path, &mut reader)
+            .unwrap_err()
+            .to_string();
+
+        assert!(error.contains("created while test model was downloading"));
+        assert_eq!(fs::read(&path).unwrap(), b"concurrent verified model");
+        assert!(!part_path(&path).exists());
+        fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn all_registered_model_assets_have_sha256_checksums() {
         for model_set in available_model_sets() {
@@ -926,6 +1258,84 @@ mod tests {
 
         assert!(message.contains("failed to prepare PP-OCRv6 small detection model"));
         assert!(message.contains("missing model asset"));
+    }
+
+    #[cfg(feature = "model-download")]
+    fn temp_test_dir(name: &str) -> PathBuf {
+        let root = std::env::temp_dir().join(format!(
+            "rapidocr-rs-{name}-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        root
+    }
+
+    #[cfg(feature = "model-download")]
+    struct InterruptingReader {
+        bytes: &'static [u8],
+        position: usize,
+        fail_after: usize,
+    }
+
+    #[cfg(feature = "model-download")]
+    impl InterruptingReader {
+        fn new(bytes: &'static [u8], fail_after: usize) -> Self {
+            Self {
+                bytes,
+                position: 0,
+                fail_after,
+            }
+        }
+    }
+
+    #[cfg(feature = "model-download")]
+    impl Read for InterruptingReader {
+        fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+            if self.position >= self.fail_after {
+                return Err(IoError::new(
+                    ErrorKind::ConnectionReset,
+                    "test interruption",
+                ));
+            }
+
+            let end = self.fail_after.min(self.bytes.len());
+            let count = (end - self.position).min(buffer.len());
+            buffer[..count].copy_from_slice(&self.bytes[self.position..self.position + count]);
+            self.position += count;
+            Ok(count)
+        }
+    }
+
+    #[cfg(feature = "model-download")]
+    struct FinalFileCreatingReader {
+        bytes: Cursor<Vec<u8>>,
+        final_path: PathBuf,
+        final_created: bool,
+    }
+
+    #[cfg(feature = "model-download")]
+    impl FinalFileCreatingReader {
+        fn new(bytes: &[u8], final_path: &Path) -> Self {
+            Self {
+                bytes: Cursor::new(bytes.to_vec()),
+                final_path: final_path.to_path_buf(),
+                final_created: false,
+            }
+        }
+    }
+
+    #[cfg(feature = "model-download")]
+    impl Read for FinalFileCreatingReader {
+        fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+            let read = self.bytes.read(buffer)?;
+            if read == 0 && !self.final_created {
+                fs::write(&self.final_path, b"concurrent verified model")?;
+                self.final_created = true;
+            }
+            Ok(read)
+        }
     }
 
     #[cfg(not(feature = "model-download"))]

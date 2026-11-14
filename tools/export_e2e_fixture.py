@@ -7,6 +7,8 @@ import os
 import sys
 from pathlib import Path
 
+from fixture_provenance import read_provenance
+
 RAPIDOCR_PYTHON_REPO_ENV = "RAPIDOCR_PYTHON_REPO"
 
 
@@ -53,6 +55,7 @@ def main() -> None:
     args = parse_args()
     rs_root = args.rs_root.resolve()
     python_repo = resolve_python_repo(args.python_repo)
+    provenance = read_provenance(python_repo)
     python_dir = python_repo / "python"
     sys.path.insert(0, str(python_dir))
 
@@ -81,6 +84,7 @@ def main() -> None:
             display_path(python_repo, image_path),
             case.pipeline,
             result,
+            provenance,
             case.tolerances,
         )
 
@@ -270,7 +274,14 @@ def display_path(base: Path, path: Path) -> str:
         return path.resolve().as_posix()
 
 
-def export_one(path: Path, image: str, pipeline: dict[str, bool], result, tolerances=None) -> None:
+def export_one(
+    path: Path,
+    image: str,
+    pipeline: dict[str, bool],
+    result,
+    provenance,
+    tolerances=None,
+) -> None:
     lines = []
     if pipeline["use_rec"]:
         txts = list(result.txts or [])
@@ -298,7 +309,7 @@ def export_one(path: Path, image: str, pipeline: dict[str, bool], result, tolera
             )
 
     payload = {
-        "source": "python-rapidocr",
+        **provenance.as_dict(),
         "image": image,
         "use_cls": pipeline["use_cls"],
         "lines": lines,

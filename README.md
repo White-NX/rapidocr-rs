@@ -21,6 +21,9 @@ The workspace can run `det -> optional cls -> rec` with registered ONNX model se
 
 ## Build
 
+Rust 1.92 or newer is required. The `ort` and `ort-sys` dependencies are pinned
+to `2.0.0-rc.15`, including the fixes for Cargo's Rust 1.100 output layout.
+
 ```powershell
 cargo build
 cargo test
@@ -75,12 +78,12 @@ fn main() -> anyhow::Result<()> {
     let cfg = cache
         .config_for(model_set)
         .with_pipeline(PipelineConfig::without_cls())
-        .with_inference_options(InferenceOptions {
-            intra_threads: 1,
-            inter_threads: 1,
-            parallel_execution: false,
-            ..Default::default()
-        });
+        .with_inference_options(
+            InferenceOptions::new()
+                .with_intra_threads(1)
+                .with_inter_threads(1)
+                .with_parallel_execution(false),
+        );
     let mut ocr = RapidOcr::from_config(cfg)?;
     let output = ocr.run_path("path/to/image.png")?;
 
@@ -141,14 +144,63 @@ Projects using `rapidocr-core` can handle models in one of three ways:
 
 The default local model directory is `models`, which is ignored by git.
 
+Downloads are streamed to a sibling `<filename>.part` file while SHA-256 is
+calculated. The part file is flushed and synchronized, then renamed into place
+only after verification succeeds. Interrupted or invalid downloads do not leave
+the final model filename behind. Cache preparation takes a cache-wide file lock
+before downloading so cooperating processes do not race over the same part file.
+
 Model downloading is enabled by the default `model-download` Cargo feature. Applications that
 pre-populate model files can avoid the blocking `reqwest` dependency with
-`rapidocr-core = { version = "0.2.2", default-features = false }`.
+`rapidocr-core = { version = "0.3.0", default-features = false, features = ["download-binaries"] }`.
+
+## Runtime Deployment
+
+Model assets and the native ONNX Runtime library have separate Cargo features:
+
+| Feature | Purpose |
+| --- | --- |
+| `model-download` | Download registered ONNX models and dictionaries at runtime. Enabled by default. |
+| `download-binaries` | Download and prepare native ONNX Runtime binaries during the build. Enabled by default. |
+| `load-dynamic` | Load an application-provided native library through `OcrRuntime::load_from` or `ORT_DYLIB_PATH`. |
+| `directml` | Make the Windows DirectML provider available for explicit selection. |
+| `tokio` | Enable the bounded worker service. |
+
+Applications shipping their own models and native runtime can use:
+
+```toml
+rapidocr-core = { version = "0.3.0", default-features = false, features = ["load-dynamic", "tokio", "directml"] }
+```
+
+```rust
+use rapidocr_core::{OcrRuntime, RapidOcr};
+
+let runtime = OcrRuntime::load_from("runtime/onnxruntime.dll")?;
+let config = rapidocr_core::config::RapidOcrConfig::ppocr_v6_small("models");
+let mut ocr = RapidOcr::new_with_runtime(config, &runtime)?;
+```
+
+For Tokio, pass the same handle to `TokioRapidOcr::new_with_runtime(config, runtime).await`.
+Initialize the native library before using other `ort` APIs. Repeated default constructors
+share one process-wide environment, and changing its library path after initialization returns
+an error. Failed library loads can be retried. A successfully initialized default environment
+stays alive for the process lifetime; shutting down a worker releases its model sessions.
+
+The crate explicitly selects ONNX Runtime API 1.24. Application-provided 1.24.x libraries
+remain supported, while the default `ort` download currently supplies 1.31 binaries.
+Cargo combines `ort` features across dependencies: if an application also depends on `ort`,
+disable its defaults and select `api-24` to keep compatibility with a 1.24 runtime. To share
+an application-owned environment, use `OcrRuntime::from_environment`; the interoperability
+methods require the same pinned `ort` version.
+
+Without `download-binaries` or `load-dynamic`, builds must provide their own linkable runtime
+through `ORT_LIB_PATH`. DirectML deployments also need the matching provider dependencies,
+including `DirectML.dll`.
 
 On Windows, enable DirectML inference on a DirectX 12-capable GPU with:
 
 ```toml
-rapidocr-core = { version = "0.2.2", features = ["directml"] }
+rapidocr-core = { version = "0.3.0", features = ["directml"] }
 ```
 
 Select `ExecutionProvider::DirectMl` in `InferenceOptions` to use it. DirectML initialization is
@@ -172,7 +224,7 @@ recognition batches check the same token between bounded work units.
 Enable the optional Tokio convenience layer with:
 
 ```toml
-rapidocr-core = { version = "0.2.2", features = ["tokio"] }
+rapidocr-core = { version = "0.3.0", features = ["tokio"] }
 ```
 
 `TokioRapidOcr` owns a dedicated OCR worker thread and a bounded request queue,
@@ -182,6 +234,30 @@ not blocked by inference. `OcrTask` cancels on drop and provides
 termination and then waits for cleanup; it is not a hard-real-time deadline.
 Call `shutdown().await` to wait for deterministic worker cleanup. Dropping the
 service requests cancellation but does not join the worker thread.
+
+Model preparation through `ModelCache` is synchronous. Run it before entering a Tokio
+runtime or inside `tokio::task::spawn_blocking` when HTTP downloads may be needed.
+
+## Model Contracts and Recognition Limits
+
+Enabled models are checked for float32 NCHW input and stage-specific output shapes.
+Recognition output classes must match the dictionary, including CTC blank and appended space;
+classification classes must match the labels. Inference verifies the batch size before decoding.
+Incompatible assets return errors instead of dropping unknown characters or indexing past crops.
+
+Recognition pads each batch to its widest crop. These defaults bound that expansion before
+allocating a tensor:
+
+```toml
+[rec.input_limits]
+max_width = 4096
+max_batch_pixels = 2097152
+```
+
+Exceeding a recognition limit returns an error. Applications can tile long text lines, reduce
+`rec.batch_size`, raise the limits, or explicitly choose `RecInputLimits::unrestricted()`.
+In TOML, use `"unlimited"` for an individual detector or recognition limit. An omitted limits
+table receives the safe defaults. The limits cover input tensors, rather than total process memory.
 
 ```powershell
 cargo run -p rapidocr-core --features tokio --example tokio_usage -- path\to\image.png
@@ -209,6 +285,8 @@ Developer workflows, parity fixture generation, ignored test gates, local config
 
 Additional project notes:
 
+- [DESIGN_REVIEW.md](DESIGN_REVIEW.md) records the design audit, runtime integration changes, and consumer migration guidance.
+- [RELEASE_NOTES.md](RELEASE_NOTES.md) records the `0.3.0` API and reliability changes.
 - [parity-gaps.md](parity-gaps.md) tracks known behavior differences from Python RapidOCR.
 - [benchmark-baseline.md](benchmark-baseline.md) records the curated benchmark baseline.
 

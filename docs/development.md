@@ -21,11 +21,35 @@ The default Rust checks do not require downloaded ONNX models or the external Py
 
 ```powershell
 cargo fmt --check
-cargo check
-cargo test
+cargo check --workspace --locked --all-targets --features rapidocr-core/tokio
+cargo test --workspace --locked --features rapidocr-core/tokio
+cargo clippy --workspace --locked --all-targets --features rapidocr-core/tokio -- -D warnings
 ```
 
 Run this path before commits that touch Rust code, configuration, examples, or docs with code snippets.
+
+The declared MSRV is Rust 1.92. CI checks MSRV and stable on Windows and Linux,
+including Windows DirectML builds. Native initialization tests use tiny checked-in
+ONNX graphs; regenerate them with `python tools/generate_test_models.py` only when
+their contracts change (the generator requires `onnx` and `numpy`).
+
+Check deployment feature boundaries independently:
+
+```powershell
+cargo check -p rapidocr-core --locked --no-default-features --features download-binaries,tokio
+cargo check --workspace --locked --all-targets --no-default-features --features rapidocr-core/load-dynamic,rapidocr-core/tokio,rapidocr-cli/load-dynamic
+```
+
+Run dynamic native tests against an application-provided runtime (API 1.24+):
+
+```powershell
+$env:ORT_DYLIB_PATH = "C:\path\to\runtime\onnxruntime.dll"
+cargo test --workspace --locked --no-default-features --features rapidocr-core/load-dynamic,rapidocr-core/tokio,rapidocr-cli/load-dynamic
+```
+
+Direct `ort` dependencies must disable their defaults and select a native API
+compatible with the deployed DLL; Cargo combines features across the dependency graph.
+The default downloaded runtime currently uses 1.31 while this crate selects API 1.24.
 
 ## CLI Development
 
@@ -110,6 +134,12 @@ cargo test -p rapidocr-core non_default_model_sets_run_rec_only_smoke -- --ignor
 
 ## Python RapidOCR Checkout
 
+The ignored Python parity gate uses unrestricted detector and recognizer inputs,
+matching the fixture generator. Production defaults remain bounded and have
+separate preprocessing/consumer tests. Some reference tensors exceed those
+defaults (the Korean detector fixture is 5728 pixels wide), so comparing with
+the default resource policy would measure a different detection resolution.
+
 Parity fixture scripts expect an external Python RapidOCR checkout. Set it explicitly:
 
 ```powershell
@@ -133,6 +163,19 @@ Export fixtures from the standalone Rust repository root:
 $env:RAPIDOCR_PYTHON_REPO = "C:\path\to\RapidOCR"
 python .\tools\export_db_fixture.py
 ```
+
+Each generated Python fixture records `source`, `source_commit`,
+`source_package_version`, and `model_version`. Validate the checked-in metadata
+without regenerating OCR output:
+
+```powershell
+python .\tools\fixture_provenance.py --python-repo "$env:RAPIDOCR_PYTHON_REPO"
+```
+
+The `--update` flag rewrites only those metadata fields. The current repository
+fixtures were generated from the Python checkout at commit
+`c18432567fca72c21d2f36dd800c0f4a5c44d01d`, package version `3.9.1.dev2`, using
+model revision `v3.9.0`.
 
 Run the Rust fixture test:
 
@@ -193,6 +236,11 @@ Use `--pipeline det-only` to evaluate detection-only geometry candidates.
 
 The e2e test checks line count, nearest-center matching, exact text ratio, character accuracy, score drift, center drift, and corner drift. Detection-only fixtures skip recognition text and score gates. Fixtures use the default metric gates unless the JSON contains a `tolerances` object for a known, documented difference. Fixtures may also contain a `pipeline` object with `use_det`, `use_cls`, and `use_rec`.
 
+The non-ignored `e2e_fixtures_record_source_provenance` test checks that Python
+fixtures retain their recorded source commit, package version, and model
+revision. Rust-only golden fixtures use `rapidocr-rs-golden` and intentionally
+do not carry Python provenance fields.
+
 Known parity gaps that are not strict gates are tracked in [../parity-gaps.md](../parity-gaps.md).
 
 ## Benchmark Commands
@@ -220,6 +268,13 @@ Use `--no-cls` to benchmark the pipeline without cls. Use `--out target\benchmar
 The benchmark script records model load time, end-to-end hot-loop time, peak RSS when `psutil` is installed, and stage summaries for det/cls/rec. Rust rows also include `det_postprocess_ms` from `OcrTimings`; the Python timing surface does not split DB postprocess separately.
 
 The curated current baseline is recorded in [../benchmark-baseline.md](../benchmark-baseline.md).
+
+## Release Compatibility
+
+The `0.3.0` release is the API compatibility boundary for the public struct and
+enum cleanup. After this release, patch changes are checked in CI with
+`cargo-semver-checks`; public data types should be consumed through constructors,
+builders, `Default`, or exhaustive matches with a wildcard arm where appropriate.
 
 ## Error And Image Handling Notes
 

@@ -1,7 +1,8 @@
 [package]
 name = "rapidocr-cli"
-version = "0.2.2"
+version = "0.3.0"
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Command-line wrapper for validating and benchmarking rapidocr-core OCR pipelines"
@@ -11,12 +12,16 @@ categories = ["command-line-utilities", "computer-vision"]
 publish = false
 
 [features]
+default = ["model-download", "download-binaries"]
 directml = ["rapidocr-core/directml"]
+download-binaries = ["rapidocr-core/download-binaries"]
+load-dynamic = ["rapidocr-core/load-dynamic"]
+model-download = ["rapidocr-core/model-download"]
 
 [dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
-rapidocr-core = { path = "../rapidocr-core", version = "0.2.2" }
+rapidocr-core = { path = "../rapidocr-core", version = "0.3.0", default-features = false }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 

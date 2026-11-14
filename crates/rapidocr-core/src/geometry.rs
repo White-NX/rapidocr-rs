@@ -252,7 +252,7 @@ impl RotatedRect {
         for (i, p) in local.into_iter().enumerate() {
             points[i] = [p.x * cos - p.y * sin, p.x * sin + p.y * cos];
         }
-        Quad { points }.ordered()
+        Quad::new(points).ordered()
     }
 }
 

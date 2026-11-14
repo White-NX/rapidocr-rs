@@ -9,6 +9,7 @@ use crate::{
     image_ops::{resize_to_multiple_for_det, rgb_to_nchw},
     inference::OnnxSession,
     types::{OcrTimings, Quad},
+    OcrRuntime,
 };
 
 pub(crate) struct TextDetector {
@@ -18,9 +19,20 @@ pub(crate) struct TextDetector {
 }
 
 impl TextDetector {
-    pub(crate) fn new(cfg: DetConfig, inference: InferenceOptions) -> Result<Self> {
+    pub(crate) fn new(
+        cfg: DetConfig,
+        inference: InferenceOptions,
+        runtime: Option<&OcrRuntime>,
+    ) -> Result<Self> {
         cfg.validate().context("invalid detection config")?;
-        let session = OnnxSession::new(&cfg.model_path, inference, true).with_context(|| {
+        let session = OnnxSession::new(
+            &cfg.model_path,
+            inference,
+            [Some(1), Some(3), None, None],
+            &[Some(1), Some(1), None, None],
+            runtime,
+        )
+        .with_context(|| {
             format!(
                 "failed to load detection model {}",
                 cfg.model_path.display()

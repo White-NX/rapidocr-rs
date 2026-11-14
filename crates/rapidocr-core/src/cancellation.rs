@@ -3,12 +3,13 @@ use std::sync::{
     Arc, Mutex,
 };
 
-use anyhow::{anyhow, Result};
+use anyhow::{Context, Result};
 use ort::session::RunOptions;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
 #[error("OCR operation was cancelled")]
+#[non_exhaustive]
 /// Error returned when an OCR request is cancelled.
 pub struct OcrCancelled;
 
@@ -57,7 +58,7 @@ impl OcrCancellationToken {
         if let Some(active_run) = active_run {
             active_run
                 .terminate()
-                .map_err(|err| anyhow!(err.to_string()))?;
+                .context("ONNX Runtime rejected the termination signal")?;
         }
         Ok(())
     }
@@ -77,7 +78,7 @@ impl OcrCancellationToken {
 
     pub(crate) fn begin_onnx_run(&self) -> Result<ActiveRunOptions> {
         self.checkpoint()?;
-        let options = Arc::new(RunOptions::new().map_err(|err| anyhow!(err.to_string()))?);
+        let options = Arc::new(RunOptions::new().context("failed to create ONNX run options")?);
         {
             let mut active_run = self
                 .state

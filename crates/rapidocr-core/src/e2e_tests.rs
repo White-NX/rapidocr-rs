@@ -11,7 +11,7 @@ use serde::Deserialize;
 
 use crate::{
     cancellation::{is_cancelled_error, OcrCancellationToken},
-    config::{PipelineConfig, RapidOcrConfig},
+    config::{DetInputLimits, PipelineConfig, RapidOcrConfig, RecInputLimits},
     model::{model_set_by_name, ModelCache},
     types::OcrLine,
     RapidOcr,
@@ -24,9 +24,18 @@ use ::tokio as tokio_runtime;
 #[cfg(feature = "tokio")]
 use std::sync::Arc;
 
+const PYTHON_FIXTURE_SOURCE: &str = "python-rapidocr";
+const RUST_FIXTURE_SOURCE: &str = "rapidocr-rs-golden";
+
 #[derive(Debug, Deserialize)]
 struct E2eFixture {
     source: String,
+    #[serde(default)]
+    source_commit: Option<String>,
+    #[serde(default)]
+    source_package_version: Option<String>,
+    #[serde(default)]
+    model_version: Option<String>,
     image: String,
     #[serde(default)]
     use_cls: Option<bool>,
@@ -45,6 +54,34 @@ impl E2eFixture {
         }
         pipeline
     }
+
+    fn assert_source_provenance(&self, path: &std::path::Path) {
+        match self.source.as_str() {
+            PYTHON_FIXTURE_SOURCE => {
+                assert_non_empty_provenance(self.source_commit.as_deref(), "source_commit", path);
+                assert_non_empty_provenance(
+                    self.source_package_version.as_deref(),
+                    "source_package_version",
+                    path,
+                );
+                assert_non_empty_provenance(self.model_version.as_deref(), "model_version", path);
+            }
+            RUST_FIXTURE_SOURCE => {
+                assert!(self.source_commit.is_none());
+                assert!(self.source_package_version.is_none());
+                assert!(self.model_version.is_none());
+            }
+            other => panic!("unknown fixture source {other:?} in {}", path.display()),
+        }
+    }
+}
+
+fn assert_non_empty_provenance(value: Option<&str>, field: &str, path: &std::path::Path) {
+    assert!(
+        value.is_some_and(|value| !value.trim().is_empty()),
+        "missing {field} in {}",
+        path.display()
+    );
 }
 
 #[derive(Debug, Clone, Copy, Deserialize)]
@@ -92,6 +129,7 @@ fn e2e_output_tracks_golden_metrics() {
     for fixture_path in fixture_files(&fixture_root) {
         let fixture: E2eFixture =
             serde_json::from_str(&fs::read_to_string(&fixture_path).unwrap()).unwrap();
+        fixture.assert_source_provenance(&fixture_path);
         let pipeline = fixture.pipeline();
         if !models_available(&model_dir, pipeline) {
             eprintln!(
@@ -104,6 +142,14 @@ fn e2e_output_tracks_golden_metrics() {
 
         let mut cfg = RapidOcrConfig::ppocr_v6_small(&model_dir);
         cfg.pipeline = pipeline;
+        if fixture.source == PYTHON_FIXTURE_SOURCE {
+            // Python fixtures were generated without input resource caps (the
+            // Korean detector fixture, for example, has width 5728). Reproduce
+            // that policy for algorithm parity; bounded defaults have separate
+            // preprocessing and consumer regression tests.
+            cfg.det.as_mut().unwrap().input_limits = DetInputLimits::unrestricted();
+            cfg.rec.as_mut().unwrap().input_limits = RecInputLimits::unrestricted();
+        }
         let mut ocr = RapidOcr::new(cfg).unwrap();
         let actual = ocr
             .run_path(resolve_python_asset(&python_repo, &fixture.image))
@@ -175,6 +221,27 @@ fn e2e_output_tracks_golden_metrics() {
         "no e2e fixtures were executed; place models under {}",
         model_dir.display()
     );
+}
+
+#[test]
+fn e2e_fixtures_record_source_provenance() {
+    let fixture_root = e2e_fixture_root(&rapidocr_rs_root());
+    let mut python_fixture_count = 0;
+    let mut rust_fixture_count = 0;
+
+    for fixture_path in fixture_files(&fixture_root) {
+        let fixture: E2eFixture =
+            serde_json::from_str(&fs::read_to_string(&fixture_path).unwrap()).unwrap();
+        fixture.assert_source_provenance(&fixture_path);
+        match fixture.source.as_str() {
+            PYTHON_FIXTURE_SOURCE => python_fixture_count += 1,
+            RUST_FIXTURE_SOURCE => rust_fixture_count += 1,
+            _ => unreachable!(),
+        }
+    }
+
+    assert_eq!(python_fixture_count, 64);
+    assert_eq!(rust_fixture_count, 2);
 }
 
 #[test]

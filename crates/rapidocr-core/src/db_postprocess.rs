@@ -441,7 +441,7 @@ fn polygon_scanline_spans(
 
     intersections.sort_by(|a, b| a.total_cmp(b));
     let mut spans = Vec::new();
-    for pair in intersections.chunks_exact(2) {
+    for pair in intersections.as_chunks::<2>().0 {
         let start = pair[0].ceil().max(0.0) as isize;
         let end = pair[1].floor().min(width.saturating_sub(1) as f32) as isize;
         if start <= end {
@@ -519,7 +519,10 @@ fn sort_candidates(mut boxes: Vec<DetCandidate>) -> Vec<DetCandidate> {
 
 #[cfg(test)]
 mod tests {
-    use std::{env, fs, path::PathBuf};
+    use std::{
+        env, fs,
+        path::{Path, PathBuf},
+    };
 
     use ndarray::ArrayD;
     use ndarray_npy::read_npy;
@@ -555,6 +558,10 @@ mod tests {
 
     #[derive(Debug, Deserialize)]
     struct Fixture {
+        source: String,
+        source_commit: String,
+        source_package_version: String,
+        model_version: String,
         dest_shape: [u32; 2],
         boxes: Vec<[[f32; 2]; 4]>,
         scores: Vec<f32>,
@@ -593,6 +600,7 @@ mod tests {
                 &fs::read_to_string(fixture_dir.join("expected.json")).unwrap(),
             )
             .unwrap();
+            assert_fixture_provenance(&expected, &fixture_dir);
 
             let processor = DbPostProcess::new(DbPostProcessConfig {
                 thresh: 0.3,
@@ -659,6 +667,30 @@ mod tests {
 
     fn default_max_mean_center_delta() -> f32 {
         20.0
+    }
+
+    fn assert_fixture_provenance(fixture: &Fixture, fixture_dir: &Path) {
+        assert_eq!(
+            fixture.source,
+            "python-rapidocr",
+            "{}",
+            fixture_dir.display()
+        );
+        assert_non_empty_provenance(&fixture.source_commit, "source_commit", fixture_dir);
+        assert_non_empty_provenance(
+            &fixture.source_package_version,
+            "source_package_version",
+            fixture_dir,
+        );
+        assert_non_empty_provenance(&fixture.model_version, "model_version", fixture_dir);
+    }
+
+    fn assert_non_empty_provenance(value: &str, field: &str, fixture_dir: &Path) {
+        assert!(
+            !value.trim().is_empty(),
+            "missing {field} in {}",
+            fixture_dir.display()
+        );
     }
 
     fn default_max_mean_score_delta() -> f32 {

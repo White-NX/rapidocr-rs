@@ -1,5 +1,8 @@
 {
   "source": "python-rapidocr",
+  "source_commit": "c18432567fca72c21d2f36dd800c0f4a5c44d01d",
+  "source_package_version": "3.9.1.dev2",
+  "model_version": "v3.9.0",
   "image": "python/tests/test_files/ch_en_num.jpg",
   "use_cls": false,
   "lines": [

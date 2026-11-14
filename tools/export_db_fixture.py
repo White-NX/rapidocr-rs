@@ -8,6 +8,8 @@ from pathlib import Path
 
 import numpy as np
 
+from fixture_provenance import read_provenance
+
 RAPIDOCR_PYTHON_REPO_ENV = "RAPIDOCR_PYTHON_REPO"
 
 DB_TOLERANCES = {
@@ -47,6 +49,7 @@ def main() -> None:
     args = parse_args()
     rs_root = args.rs_root.resolve()
     python_repo = resolve_python_repo(args.python_repo)
+    provenance = read_provenance(python_repo)
     python_dir = python_repo / "python"
     sys.path.insert(0, str(python_dir))
 
@@ -104,6 +107,7 @@ def main() -> None:
             base_out_dir,
             engine,
             apply_vertical_padding,
+            provenance,
         )
 
 
@@ -147,6 +151,7 @@ def export_one(
     base_out_dir,
     engine,
     apply_vertical_padding,
+    provenance,
 ):
     image_path = fixture_image_path(python_repo, image)
     out_dir = base_out_dir / image_path.stem
@@ -181,6 +186,7 @@ def export_one(
 
     np.save(out_dir / "pred.npy", pred.astype(np.float32))
     metadata = {
+        **provenance.as_dict(),
         "image": display_path(python_repo, image_path),
         "model_dir": display_path(rs_root, resolve_under(rs_root, model_dir_arg)),
         "dest_shape": [int(ori_shape[1]), int(ori_shape[0])],

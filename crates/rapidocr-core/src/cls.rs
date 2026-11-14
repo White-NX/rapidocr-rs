@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, ensure, Context, Result};
 use image::{imageops, RgbImage};
 use ndarray::{s, Array4, Ix2};
 
@@ -9,6 +9,7 @@ use crate::{
     config::{ClsConfig, InferenceOptions},
     inference::OnnxSession,
     types::OcrTimings,
+    OcrRuntime,
 };
 
 #[derive(Debug, Clone)]
@@ -23,9 +24,25 @@ pub(crate) struct TextClassifier {
 }
 
 impl TextClassifier {
-    pub(crate) fn new(cfg: ClsConfig, inference: InferenceOptions) -> Result<Self> {
+    pub(crate) fn new(
+        cfg: ClsConfig,
+        inference: InferenceOptions,
+        runtime: Option<&OcrRuntime>,
+    ) -> Result<Self> {
         cfg.validate().context("invalid classification config")?;
-        let session = OnnxSession::new(&cfg.model_path, inference, false).with_context(|| {
+        let session = OnnxSession::new(
+            &cfg.model_path,
+            inference,
+            [
+                None,
+                Some(3),
+                Some(cfg.image_shape[1]),
+                Some(cfg.image_shape[2]),
+            ],
+            &[None, Some(cfg.labels.len())],
+            runtime,
+        )
+        .with_context(|| {
             format!(
                 "failed to load classification model {}",
                 cfg.model_path.display()
@@ -79,12 +96,16 @@ impl TextClassifier {
                     .max_by(|(_, a), (_, b)| a.total_cmp(b))
                     .map(|(idx, score)| (idx, *score))
                     .unwrap_or((0, 0.0));
+                ensure!(
+                    score.is_finite(),
+                    "classification output contains a non-finite confidence"
+                );
                 let label = self
                     .cfg
                     .labels
                     .get(idx)
                     .cloned()
-                    .unwrap_or_else(|| idx.to_string());
+                    .context("classification output class is not present in cls.labels")?;
                 results.push(ClsResult { label, score });
             }
             timings.cls_postprocess_ms += elapsed_ms(start);

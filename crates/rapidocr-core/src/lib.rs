@@ -16,12 +16,18 @@ pub(crate) mod image_ops;
 pub(crate) mod inference;
 pub mod model;
 pub(crate) mod rec;
+pub mod runtime;
 pub mod types;
 
 #[cfg(feature = "tokio")]
 pub mod tokio;
 
 pub use cancellation::{is_cancelled_error, OcrCancellationToken, OcrCancelled};
+pub use runtime::OcrRuntime;
+
+/// Version of `rapidocr-core` compiled into the application.
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 #[cfg(feature = "tokio")]
 pub use tokio::{OcrTask, TokioOcrError, TokioRapidOcr};
 
@@ -60,6 +66,19 @@ impl RapidOcr {
     /// Enabled pipeline stages load their ONNX sessions immediately. Disabled
     /// stages do not require their model files or dictionaries to exist.
     pub fn new(cfg: RapidOcrConfig) -> Result<Self> {
+        Self::new_inner(cfg, None)
+    }
+
+    /// Builds a pipeline using an explicitly initialized, shared runtime.
+    ///
+    /// Use this when the application selects its own runtime library or shares
+    /// an ONNX environment with other models. Each pipeline still owns its own
+    /// sessions and must be run sequentially through `&mut self`.
+    pub fn new_with_runtime(cfg: RapidOcrConfig, runtime: &OcrRuntime) -> Result<Self> {
+        Self::new_inner(cfg, Some(runtime))
+    }
+
+    fn new_inner(cfg: RapidOcrConfig, runtime: Option<&OcrRuntime>) -> Result<Self> {
         cfg.validate().context("invalid OCR config")?;
         let detector = if cfg.pipeline.use_det {
             let det_cfg = cfg
@@ -67,7 +86,7 @@ impl RapidOcr {
                 .clone()
                 .context("pipeline.use_det is true but [det] config is missing")?;
             Some(
-                TextDetector::new(det_cfg, cfg.inference)
+                TextDetector::new(det_cfg, cfg.inference, runtime)
                     .context("failed to initialize detection stage")?,
             )
         } else {
@@ -79,7 +98,7 @@ impl RapidOcr {
                 .clone()
                 .context("pipeline.use_cls is true but [cls] config is missing")?;
             Some(
-                TextClassifier::new(cls_cfg, cfg.inference)
+                TextClassifier::new(cls_cfg, cfg.inference, runtime)
                     .context("failed to initialize classification stage")?,
             )
         } else {
@@ -91,7 +110,7 @@ impl RapidOcr {
                 .clone()
                 .context("pipeline.use_rec is true but [rec] config is missing")?;
             Some(
-                TextRecognizer::new(rec_cfg, cfg.inference)
+                TextRecognizer::new(rec_cfg, cfg.inference, runtime)
                     .context("failed to initialize recognition stage")?,
             )
         } else {
@@ -219,19 +238,9 @@ impl RapidOcr {
         cancellation.checkpoint()?;
 
         let Some(recognizer) = &mut self.recognizer else {
-            let lines = boxes
-                .into_iter()
-                .map(|bbox| OcrLine {
-                    bbox,
-                    text: String::new(),
-                    score: 0.0,
-                })
-                .collect();
+            let lines = boxes.into_iter().map(OcrLine::detection_only).collect();
             timings.total_ms = elapsed_ms(total_start);
-            return Ok(TimedOcrOutput {
-                output: OcrOutput { lines },
-                timings,
-            });
+            return Ok(TimedOcrOutput::new(OcrOutput::new(lines), timings));
         };
 
         let crops = if let Some(classifier) = &mut self.classifier {
@@ -256,20 +265,13 @@ impl RapidOcr {
                 if detection_enabled && text.score < self.cfg.text_score {
                     return None;
                 }
-                Some(OcrLine {
-                    bbox,
-                    text: text.text,
-                    score: text.score,
-                })
+                Some(OcrLine::new(bbox, text.text, text.score))
             })
             .collect();
         timings.output_filter_ms = elapsed_ms(start);
         timings.total_ms = elapsed_ms(total_start);
 
-        Ok(TimedOcrOutput {
-            output: OcrOutput { lines },
-            timings,
-        })
+        Ok(TimedOcrOutput::new(OcrOutput::new(lines), timings))
     }
 
     fn detect_and_crop_timed(

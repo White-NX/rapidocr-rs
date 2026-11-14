@@ -7,8 +7,13 @@ on:
 
 jobs:
   rust:
-    name: Rust
-    runs-on: ubuntu-latest
+    name: Rust ${{ matrix.rust }} / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        rust: [stable, "1.92.0"]
 
     steps:
       - name: Checkout
@@ -17,16 +22,47 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt
+          toolchain: ${{ matrix.rust }}
+          components: rustfmt, clippy
 
       - name: Cache Cargo
         uses: Swatinem/rust-cache@v2
 
       - name: Check formatting
+        if: matrix.rust == 'stable'
         run: cargo fmt --check
 
       - name: Check workspace
-        run: cargo check
+        run: cargo check --workspace --locked --all-targets --features rapidocr-core/tokio
 
       - name: Test workspace
-        run: cargo test
+        run: cargo test --workspace --locked --features rapidocr-core/tokio
+
+      - name: Check without model downloader
+        run: cargo check -p rapidocr-core --locked --no-default-features --features download-binaries,tokio
+
+      - name: Check application-provided runtime
+        run: cargo check --workspace --locked --all-targets --no-default-features --features rapidocr-core/load-dynamic,rapidocr-core/tokio,rapidocr-cli/load-dynamic
+
+      - name: Test Windows DirectML build
+        if: matrix.os == 'windows-latest'
+        run: cargo test --workspace --locked --features rapidocr-core/tokio,rapidocr-cli/directml
+
+      - name: Check Clippy
+        if: matrix.rust == 'stable'
+        run: cargo clippy --workspace --locked --all-targets --features rapidocr-core/tokio -- -D warnings
+
+  semver:
+    name: Public API compatibility
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+      - name: Install cargo-semver-checks
+        run: cargo install cargo-semver-checks --version 0.50.0 --locked
+      - name: Check rapidocr-core semver
+        run: cargo semver-checks check-release --package rapidocr-core --all-features

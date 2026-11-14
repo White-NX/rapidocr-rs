@@ -1,7 +1,8 @@
 [package]
 name = "rapidocr-core"
-version = "0.2.2"
+version = "0.3.0"
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Rust ONNX OCR core for RapidOCR-style detection, optional classification, and recognition pipelines"
@@ -18,17 +19,22 @@ name = "tokio_usage"
 required-features = ["tokio"]
 
 [features]
-default = ["model-download"]
+default = ["model-download", "download-binaries"]
 directml = ["ort/directml"]
-model-download = ["dep:reqwest"]
+download-binaries = ["ort/download-binaries", "ort/copy-dylibs", "ort/tls-rustls"]
+load-dynamic = ["ort/load-dynamic"]
+model-download = ["dep:fs2", "dep:reqwest"]
 tokio = ["dep:tokio"]
 
 [dependencies]
 anyhow = "1"
+fs2 = { version = "0.4", optional = true }
 image = "0.25"
 imageproc = "0.25"
 ndarray = "0.17"
-ort = { version = "2.0.0-rc.12", default-features = true }
+# Pin prereleases: ORT's Rust API can change between release candidates.
+# Keep the native API at 1.24 so application-provided 1.24.x runtimes still work.
+ort = { version = "=2.0.0-rc.15", default-features = false, features = ["std", "ndarray", "tracing", "api-24"] }
 reqwest = { version = "0.12", features = ["blocking", "rustls-tls"], default-features = false, optional = true }
 serde = { version = "1", features = ["derive"] }
 sha2 = "0.10"

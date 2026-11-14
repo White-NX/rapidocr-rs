@@ -13,6 +13,7 @@ use anyhow::{bail, ensure, Context, Result};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
 /// Full OCR pipeline configuration.
 pub struct RapidOcrConfig {
     /// Stage switches controlling detection, direction classification, and recognition.
@@ -43,6 +44,27 @@ pub struct RapidOcrConfig {
 }
 
 impl RapidOcrConfig {
+    /// Builds a configuration from optional stage configurations using the
+    /// standard pipeline-level defaults.
+    ///
+    /// Pipeline switches are derived from which stage configurations are
+    /// present. Call [`RapidOcrConfig::validate`] before using the configuration
+    /// when stages are assembled manually.
+    pub fn new(det: Option<DetConfig>, cls: Option<ClsConfig>, rec: Option<RecConfig>) -> Self {
+        Self {
+            pipeline: PipelineConfig::new(det.is_some(), cls.is_some(), rec.is_some()),
+            inference: InferenceOptions::default(),
+            text_score: 0.5,
+            min_side_len: 30,
+            max_side_len: 2000,
+            min_height: 30,
+            width_height_ratio: 8.0,
+            det,
+            cls,
+            rec,
+        }
+    }
+
     /// Builds the default `ppocrv6-small` configuration rooted at `model_dir`.
     pub fn ppocr_v6_small(model_dir: impl Into<PathBuf>) -> Self {
         crate::model::PPOCRV6_SMALL.config(model_dir)
@@ -110,8 +132,9 @@ impl RapidOcrConfig {
         );
         ensure!(self.min_height > 0, "min_height must be greater than 0");
         ensure!(
-            self.width_height_ratio == -1.0 || self.width_height_ratio > 0.0,
-            "width_height_ratio must be positive or -1"
+            self.width_height_ratio == -1.0
+                || (self.width_height_ratio.is_finite() && self.width_height_ratio > 0.0),
+            "width_height_ratio must be finite and positive or -1"
         );
 
         if self.pipeline.use_det {
@@ -151,6 +174,7 @@ impl RapidOcrConfig {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
+#[non_exhaustive]
 /// ONNX Runtime session resource configuration shared by all enabled stages.
 pub struct InferenceOptions {
     /// Number of threads used to parallelize execution within an operator.
@@ -167,6 +191,41 @@ pub struct InferenceOptions {
 }
 
 impl InferenceOptions {
+    /// Returns the default inference options.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Returns a copy using `intra_threads` for intra-operator execution.
+    pub fn with_intra_threads(mut self, intra_threads: usize) -> Self {
+        self.intra_threads = intra_threads;
+        self
+    }
+
+    /// Returns a copy using `inter_threads` for inter-operator execution.
+    pub fn with_inter_threads(mut self, inter_threads: usize) -> Self {
+        self.inter_threads = inter_threads;
+        self
+    }
+
+    /// Returns a copy with parallel graph execution enabled or disabled.
+    pub fn with_parallel_execution(mut self, parallel_execution: bool) -> Self {
+        self.parallel_execution = parallel_execution;
+        self
+    }
+
+    /// Returns a copy with the CPU arena allocator enabled or disabled.
+    pub fn with_cpu_mem_arena(mut self, enable_cpu_mem_arena: bool) -> Self {
+        self.enable_cpu_mem_arena = enable_cpu_mem_arena;
+        self
+    }
+
+    /// Returns a copy using the selected execution provider.
+    pub fn with_execution_provider(mut self, execution_provider: ExecutionProvider) -> Self {
+        self.execution_provider = execution_provider;
+        self
+    }
+
     /// Validates ONNX Runtime thread limits.
     pub fn validate(&self) -> Result<()> {
         ensure!(
@@ -211,6 +270,7 @@ impl Default for InferenceOptions {
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
+#[non_exhaustive]
 /// ONNX Runtime execution provider selection.
 pub enum ExecutionProvider {
     /// Use the default CPU execution provider.
@@ -221,6 +281,7 @@ pub enum ExecutionProvider {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 /// Pipeline stage switches.
 pub struct PipelineConfig {
     /// Enables text box detection.
@@ -232,6 +293,15 @@ pub struct PipelineConfig {
 }
 
 impl PipelineConfig {
+    /// Creates an explicit set of pipeline stage switches.
+    pub const fn new(use_det: bool, use_cls: bool, use_rec: bool) -> Self {
+        Self {
+            use_det,
+            use_cls,
+            use_rec,
+        }
+    }
+
     /// Enables detection, classification, and recognition.
     pub const fn full() -> Self {
         Self {
@@ -287,6 +357,7 @@ impl Default for PipelineConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
 /// Detection-stage model and postprocessing configuration.
 pub struct DetConfig {
     /// ONNX detection model path.
@@ -315,6 +386,44 @@ pub struct DetConfig {
 }
 
 impl DetConfig {
+    /// Creates a detection configuration.
+    ///
+    /// Detector input resource limits use [`DetInputLimits::default`]. Future
+    /// fields added to this type will also receive backward-compatible defaults.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        model_path: impl Into<PathBuf>,
+        limit_side_len: u32,
+        limit_type: LimitType,
+        mean: [f32; 3],
+        std: [f32; 3],
+        thresh: f32,
+        box_thresh: f32,
+        max_candidates: usize,
+        unclip_ratio: f32,
+        min_size: u32,
+    ) -> Self {
+        Self {
+            model_path: model_path.into(),
+            limit_side_len,
+            limit_type,
+            input_limits: DetInputLimits::default(),
+            mean,
+            std,
+            thresh,
+            box_thresh,
+            max_candidates,
+            unclip_ratio,
+            min_size,
+        }
+    }
+
+    /// Returns a copy using the supplied detector input resource limits.
+    pub fn with_input_limits(mut self, input_limits: DetInputLimits) -> Self {
+        self.input_limits = input_limits;
+        self
+    }
+
     /// Validates model paths, numeric ranges, and normalization parameters.
     pub fn validate(&self) -> Result<()> {
         ensure_non_empty_path(&self.model_path, "det.model_path")?;
@@ -344,6 +453,7 @@ impl DetConfig {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 /// Side selected by detector resize limiting.
 pub enum LimitType {
     /// Limit the minimum side.
@@ -358,18 +468,32 @@ pub enum LimitType {
 /// can reject oversized detector inputs or explicitly opt into unrestricted resizing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
+#[non_exhaustive]
 pub struct DetInputLimits {
     /// Maximum detector input side after 32-pixel alignment, or no side limit.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(with = "optional_limit")]
     pub max_side_len: Option<u32>,
     /// Maximum detector input pixel count after 32-pixel alignment, or no pixel limit.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(with = "optional_limit")]
     pub max_pixels: Option<u64>,
     /// Behavior when the resize requested by [`DetConfig::limit_side_len`] exceeds a limit.
     pub overflow_behavior: DetOverflowBehavior,
 }
 
 impl DetInputLimits {
+    /// Creates an explicit detector input resource policy.
+    pub const fn new(
+        max_side_len: Option<u32>,
+        max_pixels: Option<u64>,
+        overflow_behavior: DetOverflowBehavior,
+    ) -> Self {
+        Self {
+            max_side_len,
+            max_pixels,
+            overflow_behavior,
+        }
+    }
+
     /// Validates limits against the detector's required 32-pixel alignment.
     pub fn validate(&self) -> Result<()> {
         if let Some(max_side_len) = self.max_side_len {
@@ -410,6 +534,7 @@ impl Default for DetInputLimits {
 /// Behavior when detector preprocessing would exceed configured resource limits.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
+#[non_exhaustive]
 pub enum DetOverflowBehavior {
     /// Preserve the image aspect ratio while shrinking it into the configured limits.
     #[default]
@@ -421,6 +546,7 @@ pub enum DetOverflowBehavior {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
 /// Recognition-stage model configuration.
 pub struct RecConfig {
     /// ONNX recognition model path.
@@ -431,20 +557,106 @@ pub struct RecConfig {
     pub image_shape: [usize; 3],
     /// Maximum number of crops processed per inference call.
     pub batch_size: usize,
+    /// Resource limits checked before allocating each recognition input batch.
+    #[serde(default)]
+    pub input_limits: RecInputLimits,
 }
 
 impl RecConfig {
+    /// Creates a recognition-stage configuration.
+    pub fn new(
+        model_path: impl Into<PathBuf>,
+        dict_path: impl Into<PathBuf>,
+        image_shape: [usize; 3],
+        batch_size: usize,
+    ) -> Self {
+        Self {
+            model_path: model_path.into(),
+            dict_path: dict_path.into(),
+            image_shape,
+            batch_size,
+            input_limits: RecInputLimits::default(),
+        }
+    }
+
+    /// Returns a copy using explicit recognition input resource limits.
+    pub fn with_input_limits(mut self, input_limits: RecInputLimits) -> Self {
+        self.input_limits = input_limits;
+        self
+    }
+
     /// Validates model paths, input shape, and batch size.
     pub fn validate(&self) -> Result<()> {
         ensure_non_empty_path(&self.model_path, "rec.model_path")?;
         ensure_non_empty_path(&self.dict_path, "rec.dict_path")?;
         ensure_image_shape(self.image_shape, "rec.image_shape")?;
         ensure!(self.batch_size > 0, "rec.batch_size must be greater than 0");
+        self.input_limits.validate(self.image_shape)?;
         Ok(())
     }
 }
 
+/// Limits for recognition batches with dynamically padded widths.
+///
+/// Oversized requests return an error before tensor allocation. Tiling long
+/// text lines remains the caller's responsibility; inputs are not truncated.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+#[non_exhaustive]
+pub struct RecInputLimits {
+    /// Maximum padded width of one crop, or no width limit.
+    #[serde(with = "optional_limit")]
+    pub max_width: Option<u32>,
+    /// Maximum sum of padded crop pixels in one batch, excluding channels.
+    #[serde(with = "optional_limit")]
+    pub max_batch_pixels: Option<u64>,
+}
+
+impl RecInputLimits {
+    /// Creates an explicit recognition input resource policy.
+    pub const fn new(max_width: Option<u32>, max_batch_pixels: Option<u64>) -> Self {
+        Self {
+            max_width,
+            max_batch_pixels,
+        }
+    }
+
+    /// Disables configurable limits. Tensor arithmetic is still checked.
+    pub const fn unrestricted() -> Self {
+        Self {
+            max_width: None,
+            max_batch_pixels: None,
+        }
+    }
+
+    fn validate(&self, shape: [usize; 3]) -> Result<()> {
+        if let Some(max_width) = self.max_width {
+            ensure!(
+                u64::from(max_width) >= shape[2] as u64,
+                "rec.input_limits.max_width must be at least rec.image_shape[2]"
+            );
+        }
+        if let Some(max_batch_pixels) = self.max_batch_pixels {
+            ensure!(
+                max_batch_pixels >= shape[1] as u64 * shape[2] as u64,
+                "rec.input_limits.max_batch_pixels must fit at least one configured crop"
+            );
+        }
+        Ok(())
+    }
+}
+
+impl Default for RecInputLimits {
+    fn default() -> Self {
+        Self {
+            max_width: Some(4096),
+            max_batch_pixels: Some(2 * 1024 * 1024),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
 /// Text-line orientation classifier configuration.
 pub struct ClsConfig {
     /// ONNX classification model path.
@@ -460,6 +672,23 @@ pub struct ClsConfig {
 }
 
 impl ClsConfig {
+    /// Creates a text-line orientation classifier configuration.
+    pub fn new(
+        model_path: impl Into<PathBuf>,
+        image_shape: [usize; 3],
+        batch_size: usize,
+        thresh: f32,
+        labels: Vec<String>,
+    ) -> Self {
+        Self {
+            model_path: model_path.into(),
+            image_shape,
+            batch_size,
+            thresh,
+            labels,
+        }
+    }
+
     /// Validates model path, input shape, batch size, threshold, and labels.
     pub fn validate(&self) -> Result<()> {
         ensure_non_empty_path(&self.model_path, "cls.model_path")?;
@@ -481,6 +710,42 @@ struct RapidOcrConfigFile {
     use_cls: Option<bool>,
     #[serde(default)]
     use_rec: Option<bool>,
+}
+
+// TOML has no null value. Omitting a disabled limit would restore the safe
+// default on deserialization, so encode an explicit opt-out as "unlimited".
+mod optional_limit {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<T: Serialize, S: Serializer>(
+        value: &Option<T>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        match value {
+            Some(value) => value.serialize(serializer),
+            None => serializer.serialize_str("unlimited"),
+        }
+    }
+
+    pub fn deserialize<'de, T: Deserialize<'de>, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Option<T>, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Limit<T> {
+            Value(T),
+            Text(String),
+            Null(()),
+        }
+        match Limit::<T>::deserialize(deserializer)? {
+            Limit::Value(value) => Ok(Some(value)),
+            Limit::Text(text) if text == "unlimited" => Ok(None),
+            Limit::Null(()) => Ok(None),
+            Limit::Text(_) => Err(serde::de::Error::custom(
+                "expected a positive limit or \"unlimited\"",
+            )),
+        }
+    }
 }
 
 fn ensure_non_empty_path(path: &Path, label: &str) -> Result<()> {
@@ -507,12 +772,53 @@ fn ensure_image_shape(shape: [usize; 3], label: &str) -> Result<()> {
     ensure!(shape[0] == 3, "{label}[0] must be 3 channels");
     ensure!(shape[1] > 0, "{label}[1] must be greater than 0");
     ensure!(shape[2] > 0, "{label}[2] must be greater than 0");
+    ensure!(
+        shape[1] <= u32::MAX as usize && shape[2] <= u32::MAX as usize,
+        "{label} height and width must fit in a 32-bit image dimension"
+    );
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn nullable_json_limits_remain_compatible() {
+        let limits: DetInputLimits = serde_json::from_str(
+            r#"{"max_side_len":null,"max_pixels":4194304,"overflow_behavior":"downscale"}"#,
+        )
+        .unwrap();
+        assert_eq!(limits.max_side_len, None);
+        assert_eq!(limits.max_pixels, Some(4194304));
+    }
+
+    #[test]
+    fn disabled_resource_limits_survive_toml_roundtrip() {
+        let mut config = RapidOcrConfig::ppocr_v6_small("models");
+        config.det.as_mut().unwrap().input_limits.max_side_len = None;
+        config.rec.as_mut().unwrap().input_limits = RecInputLimits::unrestricted();
+        let content = config.to_toml_string().unwrap();
+        let loaded = RapidOcrConfig::from_toml_str(&content).unwrap();
+        assert_eq!(loaded.det.unwrap().input_limits.max_side_len, None);
+        assert_eq!(
+            loaded.rec.unwrap().input_limits,
+            RecInputLimits::unrestricted()
+        );
+    }
+
+    #[test]
+    fn legacy_recognition_config_receives_safe_input_limits() {
+        let mut config = RapidOcrConfig::ppocr_v6_small("models");
+        config.rec.as_mut().unwrap().input_limits = RecInputLimits::unrestricted();
+        let content = config.to_toml_string().unwrap();
+        let content = content.replace(
+            "\n[rec.input_limits]\nmax_width = \"unlimited\"\nmax_batch_pixels = \"unlimited\"\n",
+            "",
+        );
+        let loaded = RapidOcrConfig::from_toml_str(&content).unwrap();
+        assert_eq!(loaded.rec.unwrap().input_limits, RecInputLimits::default());
+    }
 
     #[test]
     fn config_toml_roundtrip_preserves_default_paths_and_flags() {
@@ -587,11 +893,8 @@ mod tests {
 
     #[test]
     fn config_validation_rejects_cls_without_rec() {
-        let cfg = RapidOcrConfig::ppocr_v6_small("models").with_pipeline(PipelineConfig {
-            use_det: true,
-            use_cls: true,
-            use_rec: false,
-        });
+        let cfg = RapidOcrConfig::ppocr_v6_small("models")
+            .with_pipeline(PipelineConfig::new(true, true, false));
 
         let err = cfg.validate().unwrap_err().to_string();
 

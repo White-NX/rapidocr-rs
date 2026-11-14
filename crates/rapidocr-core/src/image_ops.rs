@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{borrow::Cow, path::Path};
 
 use anyhow::{bail, Context, Result};
 use image::{
@@ -83,11 +83,11 @@ pub(crate) fn resize_image_within_bounds(
     img: &RgbImage,
     min_side_len: u32,
     max_side_len: u32,
-) -> Result<(RgbImage, f32, f32)> {
+) -> Result<(Cow<'_, RgbImage>, f32, f32)> {
     let (mut w, mut h) = img.dimensions();
     let original_w = w;
     let original_h = h;
-    let mut current = img.clone();
+    let mut current = Cow::Borrowed(img);
 
     // The outer pipeline keeps dimensions aligned to 32 so later detector
     // preprocessing does not introduce a second large geometry shift.
@@ -95,7 +95,12 @@ pub(crate) fn resize_image_within_bounds(
         let ratio = max_side_len as f32 / w.max(h) as f32;
         w = round_to_multiple((w as f32 * ratio) as u32, 32).max(32);
         h = round_to_multiple((h as f32 * ratio) as u32, 32).max(32);
-        current = imageops::resize(&current, w, h, imageops::FilterType::Triangle);
+        current = Cow::Owned(imageops::resize(
+            current.as_ref(),
+            w,
+            h,
+            imageops::FilterType::Triangle,
+        ));
     }
 
     let (w2, h2) = current.dimensions();
@@ -103,7 +108,12 @@ pub(crate) fn resize_image_within_bounds(
         let ratio = min_side_len as f32 / w2.min(h2) as f32;
         w = round_to_multiple((w2 as f32 * ratio) as u32, 32).max(32);
         h = round_to_multiple((h2 as f32 * ratio) as u32, 32).max(32);
-        current = imageops::resize(&current, w, h, imageops::FilterType::Triangle);
+        current = Cow::Owned(imageops::resize(
+            current.as_ref(),
+            w,
+            h,
+            imageops::FilterType::Triangle,
+        ));
     }
 
     let (new_w, new_h) = current.dimensions();
@@ -121,12 +131,12 @@ pub(crate) fn apply_vertical_padding(
     img: &RgbImage,
     width_height_ratio: f32,
     min_height: u32,
-) -> Result<(RgbImage, u32)> {
+) -> Result<(Cow<'_, RgbImage>, u32)> {
     let (w, h) = img.dimensions();
     let use_limit_ratio =
         width_height_ratio != -1.0 && w as f32 / h.max(1) as f32 > width_height_ratio;
     if h > min_height && !use_limit_ratio {
-        return Ok((img.clone(), 0));
+        return Ok((Cow::Borrowed(img), 0));
     }
 
     if width_height_ratio <= 0.0 && width_height_ratio != -1.0 {
@@ -141,11 +151,21 @@ pub(crate) fn apply_vertical_padding(
     } else {
         (w as f32 / width_height_ratio) as u32
     };
-    let new_h = base_h.max(min_height) * 2;
+    let new_h = base_h
+        .max(min_height)
+        .checked_mul(2)
+        .context("vertical padding height exceeds image dimension limits")?;
     let padding_h = new_h.abs_diff(h) / 2;
-    let mut out = ImageBuffer::from_pixel(w, h + padding_h * 2, Rgb([0, 0, 0]));
+    let padded_h = h
+        .checked_add(
+            padding_h
+                .checked_mul(2)
+                .context("vertical padding height exceeds image dimension limits")?,
+        )
+        .context("padded image height exceeds image dimension limits")?;
+    let mut out = ImageBuffer::from_pixel(w, padded_h, Rgb([0, 0, 0]));
     imageops::replace(&mut out, img, 0, padding_h as i64);
-    Ok((out, padding_h))
+    Ok((Cow::Owned(out), padding_h))
 }
 
 pub(crate) fn resize_to_multiple_for_det(
@@ -372,6 +392,26 @@ mod tests {
     use super::*;
 
     #[test]
+    fn unchanged_pipeline_images_are_borrowed() {
+        let image = RgbImage::new(320, 48);
+        let (resized, ratio_w, ratio_h) = resize_image_within_bounds(&image, 30, 2000).unwrap();
+        assert!(matches!(resized, Cow::Borrowed(_)));
+        assert_eq!((ratio_w, ratio_h), (1.0, 1.0));
+        let (padded, padding_top) = apply_vertical_padding(&resized, 8.0, 30).unwrap();
+        assert!(matches!(padded, Cow::Borrowed(_)));
+        assert_eq!(padding_top, 0);
+    }
+
+    #[test]
+    fn excessive_padding_height_returns_an_error_before_allocation() {
+        let image = RgbImage::new(32, 1);
+        let error = apply_vertical_padding(&image, -1.0, u32::MAX).unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("vertical padding height exceeds image dimension limits"));
+    }
+
+    #[test]
     fn alpha_images_are_composited_onto_contrast_background() {
         let mut black_text = RgbaImage::from_pixel(2, 1, Rgba([0, 0, 0, 0]));
         black_text.put_pixel(0, 0, Rgba([0, 0, 0, 255]));
@@ -433,11 +473,7 @@ mod tests {
     #[test]
     fn detector_resize_rejects_limit_overflow_before_allocating_target() {
         let image = RgbImage::new(640, 480);
-        let limits = DetInputLimits {
-            max_side_len: Some(512),
-            max_pixels: None,
-            overflow_behavior: DetOverflowBehavior::Reject,
-        };
+        let limits = DetInputLimits::new(Some(512), None, DetOverflowBehavior::Reject);
 
         let error = resize_to_multiple_for_det(&image, 736, true, &limits)
             .unwrap_err()
@@ -450,11 +486,7 @@ mod tests {
     #[test]
     fn detector_resize_allow_explicitly_ignores_limits() {
         let image = RgbImage::new(640, 480);
-        let limits = DetInputLimits {
-            max_side_len: Some(512),
-            max_pixels: Some(32 * 32),
-            overflow_behavior: DetOverflowBehavior::Allow,
-        };
+        let limits = DetInputLimits::new(Some(512), Some(32 * 32), DetOverflowBehavior::Allow);
 
         let resized = resize_to_multiple_for_det(&image, 736, true, &limits).unwrap();
 
@@ -464,11 +496,7 @@ mod tests {
     #[test]
     fn detector_resize_enforces_pixel_only_limit_on_thin_input() {
         let image = RgbImage::new(1, 200);
-        let limits = DetInputLimits {
-            max_side_len: None,
-            max_pixels: Some(32 * 320),
-            overflow_behavior: DetOverflowBehavior::Downscale,
-        };
+        let limits = DetInputLimits::new(None, Some(32 * 320), DetOverflowBehavior::Downscale);
 
         let resized = resize_to_multiple_for_det(&image, 736, true, &limits).unwrap();
 

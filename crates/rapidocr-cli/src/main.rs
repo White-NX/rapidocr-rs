@@ -36,6 +36,10 @@ struct Args {
     #[arg(long)]
     directml: bool,
 
+    /// Path to an application-provided ONNX Runtime library (requires load-dynamic).
+    #[arg(long)]
+    ort_dylib: Option<PathBuf>,
+
     #[arg(long)]
     no_det: bool,
 
@@ -91,7 +95,20 @@ fn main() -> Result<()> {
     apply_overrides(&mut cfg, &args);
     cfg.validate()?;
     let model_load_start = Instant::now();
-    let mut ocr = RapidOcr::new(cfg)?;
+    let mut ocr = if let Some(path) = &args.ort_dylib {
+        #[cfg(feature = "load-dynamic")]
+        {
+            let runtime = rapidocr_core::OcrRuntime::load_from(path)?;
+            RapidOcr::new_with_runtime(cfg, &runtime)?
+        }
+        #[cfg(not(feature = "load-dynamic"))]
+        {
+            let _ = path;
+            anyhow::bail!("--ort-dylib requires the `load-dynamic` Cargo feature");
+        }
+    } else {
+        RapidOcr::new(cfg)?
+    };
     let model_load_ms = model_load_start.elapsed().as_secs_f64() * 1000.0;
     let repeat = args.repeat.max(1);
     let mut elapsed = Vec::with_capacity(repeat);
