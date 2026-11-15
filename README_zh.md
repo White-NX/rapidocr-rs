@@ -1,10 +1,23 @@
-# RapidOCR-rs<picture><img align="right" src="./docs/rapi-chan.png" width="34%" alt="" /></picture>
+<table>
+<tr>
+<td width="74%" valign="top">
+
+# RapidOCR-rs
 
 RapidOCR-rs 是一款基于[RapidOCR](https://github.com/RapidAI/RapidOCR)进行 Rust 重写的开源 OCR 解决方案。
 
 需要 Rust 1.92 或更新版本。`ort` 与 `ort-sys` 固定为 `2.0.0-rc.15`，支持 Rust 1.100 的构建目录布局。
 
 基于原项目开源的 PaddleOCR ONNX 模型，我们将其在不引入 `cv2` 的前提下移植到了 Rust，以方便开发者将 RapidOCR 轻松地集成到产品中，同时获得与 python 版本的 RapidOCR 相似的性能。
+
+</td>
+<td width="26%" valign="top">
+
+<picture><img src="./docs/rapi-chan.png" width="100%" alt="" /></picture>
+
+</td>
+</tr>
+</table>
 
 ## 快速开始
 

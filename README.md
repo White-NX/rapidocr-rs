@@ -1,10 +1,23 @@
-# RapidOCR-rs<picture><img align="right" src="./docs/rapi-chan.png" width="34%" alt="" /></picture>
+<table>
+<tr>
+<td width="74%" valign="top">
+
+# RapidOCR-rs
 
 Rust ONNX Runtime OCR core for RapidOCR-style detection, optional text-line orientation classification, and text recognition pipelines.
 
 ## Introduction
 
 `rapidocr-rs` is a Rust workspace for running RapidOCR model pipelines through ONNX Runtime. It currently provides:
+
+</td>
+<td width="26%" valign="top">
+
+<picture><img src="./docs/rapi-chan.png" width="100%" alt="" /></picture>
+
+</td>
+</tr>
+</table>
 
 - `rapidocr-core`: library API, model registry, TOML configuration, image preprocessing, OCR pipeline, and model cache handling.
 - `rapidocr-cli`: workspace command-line wrapper for local validation and benchmarking.
