@@ -1,8 +1,4 @@
-<div style="text-align: center;">
-    RapidOCR-rs
-</div>
-
----
+# RapidOCR-rs<picture><img align="right" src="./docs/rapi-chan.png" width="34%" alt="" /></picture>
 
 RapidOCR-rs 是一款基于[RapidOCR](https://github.com/RapidAI/RapidOCR)进行 Rust 重写的开源 OCR 解决方案。
 

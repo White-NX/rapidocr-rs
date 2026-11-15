@@ -1,4 +1,4 @@
-# rapidocr-rs
+# RapidOCR-rs<picture><img align="right" src="./docs/rapi-chan.png" width="34%" alt="" /></picture>
 
 Rust ONNX Runtime OCR core for RapidOCR-style detection, optional text-line orientation classification, and text recognition pipelines.
 
