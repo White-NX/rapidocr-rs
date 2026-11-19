@@ -1,5 +1,7 @@
 //! Public OCR output and timing data types.
 
+use std::ops::Range;
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -166,10 +168,209 @@ fn distance(a: [f32; 2], b: [f32; 2]) -> f32 {
     (dx * dx + dy * dy).sqrt()
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct RecText {
     pub text: String,
     pub score: f32,
+    pub alignment: Option<RecAlignment>,
+}
+
+pub(crate) struct RecAlignment {
+    pub input_width: usize,
+    pub valid_width: usize,
+    pub time_steps: usize,
+    pub tokens: Vec<AlignedToken>,
+}
+
+pub(crate) struct AlignedToken {
+    pub text_range: Range<usize>,
+    pub score: f32,
+    pub timestep_range: Range<usize>,
+    pub x_center: f32,
+    pub x_range: [f32; 2],
+}
+
+/// One dictionary token and its estimated selection cell.
+///
+/// A token may contain several Unicode code points (for example a flag emoji),
+/// or be a space. It is not necessarily one character or grapheme. Selection
+/// cells come from greedy CTC alignment and cover the crop's full height; they
+/// are not pixel-precise glyph detection boxes.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct OcrToken {
+    /// Half-open UTF-8 byte range in [`OcrLine::text`].
+    ///
+    /// Ranges are contiguous in decode order and reconstruct the complete text.
+    /// These offsets are not Unicode code-point or JavaScript UTF-16 indices.
+    pub text_range: Range<usize>,
+    /// Confidence at the first retained CTC timestep, as used in the line score.
+    ///
+    /// This is recognition confidence, not a measure of coordinate accuracy.
+    pub score: f32,
+    /// Half-open run of consecutive equal, non-blank greedy CTC labels.
+    ///
+    /// Blank timesteps are excluded. Equal labels separated by blank produce
+    /// separate tokens. Indices refer to [`OcrTextAlignment::time_steps`].
+    pub timestep_range: Range<usize>,
+    /// Center of the CTC run, normalized to the valid recognition crop width.
+    ///
+    /// Uses the horizontal, post-rotation recognition orientation, clipped to
+    /// `[0, 1]`. Batch padding is excluded from the coordinate scale.
+    pub x_center: f32,
+    /// Estimated selection interval in the same normalized coordinates.
+    ///
+    /// Interior boundaries are midpoints between adjacent run centers. The
+    /// first/last cells extend to the crop edges; spaces retain their own cells.
+    /// Tokens emitted in padded input may have zero-width cells at the edge.
+    pub x_range: [f32; 2],
+    /// Estimated selection quadrilateral in source-image pixel coordinates.
+    ///
+    /// Corners follow `(x_start, top)`, `(x_end, top)`, `(x_end, bottom)`,
+    /// `(x_start, bottom)` in recognition orientation, mapped through the actual
+    /// crop, rotations, resize and padding, then clipped to the source image.
+    /// Corner order therefore need not start at the source-image top left.
+    /// `run_path` coordinates use the image after EXIF orientation, like line boxes.
+    pub bbox: Quad,
+}
+
+impl OcrToken {
+    /// Creates a token with explicit text, alignment, and selection coordinates.
+    pub fn new(
+        text_range: Range<usize>,
+        score: f32,
+        timestep_range: Range<usize>,
+        x_center: f32,
+        x_range: [f32; 2],
+        bbox: Quad,
+    ) -> Self {
+        Self {
+            text_range,
+            score,
+            timestep_range,
+            x_center,
+            x_range,
+            bbox,
+        }
+    }
+}
+
+/// Maps the normalized recognition rectangle to unclipped source-image pixels.
+///
+/// The map already includes crop orientation, classifier rotation, pixel-center
+/// scaling, perspective/fallback cropping, edge replication, and detector
+/// pipeline resize/padding. Store this once per line to reconstruct selection
+/// cells from their one-dimensional intervals.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct OcrTextMapping {
+    /// Row-major 3x3 projective matrix multiplying the column vector `[u, v, 1]`.
+    ///
+    /// `u` and `v` range across `[0, 1]` in the post-rotation recognition crop.
+    /// Divide the first two resulting components by the third to obtain source
+    /// pixel coordinates. Those coordinates are intentionally not clipped.
+    pub matrix: [[f32; 3]; 3],
+    /// Source image `[width, height]`, used to clip reconstructed selections.
+    ///
+    /// For `run_path`, these dimensions follow EXIF correction, like line boxes.
+    pub source_size: [u32; 2],
+}
+
+impl OcrTextMapping {
+    /// Creates a mapping with explicit matrix coefficients and source dimensions.
+    pub const fn new(matrix: [[f32; 3]; 3], source_size: [u32; 2]) -> Self {
+        Self {
+            matrix,
+            source_size,
+        }
+    }
+
+    /// Projects a normalized point without clipping it to the source image.
+    ///
+    /// Returns `None` for non-finite inputs/results or a zero homogeneous divisor.
+    /// Singular matrices for one-pixel-wide/high crops are valid if projection
+    /// still has a finite nonzero divisor; no matrix inversion is required.
+    pub fn project_point(&self, [u, v]: [f32; 2]) -> Option<[f32; 2]> {
+        if !u.is_finite() || !v.is_finite() {
+            return None;
+        }
+        let m = &self.matrix;
+        let divisor = m[2][0] * u + m[2][1] * v + m[2][2];
+        if !divisor.is_finite() || divisor == 0.0 {
+            return None;
+        }
+        let x = (m[0][0] * u + m[0][1] * v + m[0][2]) / divisor;
+        let y = (m[1][0] * u + m[1][1] * v + m[1][2]) / divisor;
+        (x.is_finite() && y.is_finite()).then_some([x, y])
+    }
+
+    /// Reconstructs a full-height selection cell and clips its source coordinates.
+    ///
+    /// Corners preserve recognition order. Returns `None` for invalid mappings,
+    /// empty source dimensions, or an unordered/non-normalized interval.
+    pub fn selection_quad(&self, x_range: [f32; 2]) -> Option<Quad> {
+        if self.source_size.contains(&0)
+            || x_range[0] > x_range[1]
+            || !x_range.iter().all(|x| (0.0..=1.0).contains(x))
+        {
+            return None;
+        }
+        let mut points = [
+            [x_range[0], 0.0],
+            [x_range[1], 0.0],
+            [x_range[1], 1.0],
+            [x_range[0], 1.0],
+        ];
+        for point in &mut points {
+            *point = self.project_point(*point)?;
+        }
+        let mut quad = Quad::new(points);
+        quad.clip(self.source_size[0], self.source_size[1]);
+        Some(quad)
+    }
+}
+
+/// Optional CTC alignment produced by [`crate::config::RecConfig::return_tokens`].
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct OcrTextAlignment {
+    /// Padded ONNX input width shared by the recognition batch, in pixels.
+    pub input_width: usize,
+    /// Actual resized width occupied by this crop before right-side padding.
+    pub valid_width: usize,
+    /// Number of output timesteps in the model's `[N, T, C]` tensor.
+    pub time_steps: usize,
+    /// Tokens in CTC decode order, including whitespace and multi-code-point entries.
+    pub tokens: Vec<OcrToken>,
+    /// Unclipped normalized-crop mapping for compact selection persistence.
+    ///
+    /// The OCR pipeline supplies this whenever token output is enabled. `None`
+    /// supports older serialized alignment and manually constructed metadata.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mapping: Option<OcrTextMapping>,
+}
+
+impl OcrTextAlignment {
+    /// Creates alignment metadata without exposing the full probability tensor.
+    pub fn new(
+        input_width: usize,
+        valid_width: usize,
+        time_steps: usize,
+        tokens: Vec<OcrToken>,
+    ) -> Self {
+        Self {
+            input_width,
+            valid_width,
+            time_steps,
+            tokens,
+            mapping: None,
+        }
+    }
+
+    /// Attaches the unclipped source mapping while preserving existing constructors.
+    pub fn with_mapping(mut self, mapping: OcrTextMapping) -> Self {
+        self.mapping = Some(mapping);
+        self
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -223,6 +424,12 @@ pub struct OcrLine {
     /// `None` means classification was disabled or no rotation metadata was supplied.
     #[serde(default)]
     pub rotation: Option<OcrRotation>,
+    /// Optional CTC tokens and estimated selection cells.
+    ///
+    /// `None` when token output or recognition is disabled. Absent metadata is
+    /// omitted from JSON so enabling this capability does not change default output.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text_alignment: Option<OcrTextAlignment>,
 }
 
 impl OcrLine {
@@ -234,6 +441,7 @@ impl OcrLine {
             score,
             detection_score: None,
             rotation: None,
+            text_alignment: None,
         }
     }
 
@@ -253,6 +461,12 @@ impl OcrLine {
     /// Attaches direction classification and applied rotation metadata.
     pub fn with_rotation(mut self, rotation: OcrRotation) -> Self {
         self.rotation = Some(rotation);
+        self
+    }
+
+    /// Attaches CTC tokens and estimated selection cells.
+    pub fn with_text_alignment(mut self, alignment: OcrTextAlignment) -> Self {
+        self.text_alignment = Some(alignment);
         self
     }
 }

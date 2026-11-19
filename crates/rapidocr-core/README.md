@@ -28,7 +28,86 @@ describes the classifier's additional crop rotation, excluding EXIF and tall-box
 crop orientation; output box coordinates are unaffected. Disabled stages have `None`
 metadata. `OcrLine::new` and `detection_only` start without metadata; use
 `with_detection_score` and `with_rotation` to attach it when constructing results.
-Serde accepts older JSON lines without the new fields and serializes absent metadata as `null`.
+Serde accepts older JSON lines without these fields and serializes absent detection/rotation metadata as `null`.
+
+## Optional token selection cells
+
+`RecConfig::with_return_tokens(true)` (or `rec.return_tokens = true` in TOML)
+adds `OcrLine::text_alignment: Option<OcrTextAlignment>`. Its default is disabled,
+and `None` is **omitted** from JSON. Detection-only lines always have `None`.
+Recognition-only lines use the full caller image as their crop; `run_path` applies
+EXIF orientation before establishing that coordinate space.
+
+`OcrTextAlignment` exposes `input_width` (padded batch width), `valid_width`
+(actual resized crop width), `time_steps` (`T` in `[N, T, C]`), `tokens`, and
+the optional per-line `mapping` described below.
+The full probability tensor stays internal. Each `OcrToken` returns a half-open
+UTF-8 `text_range`, `score`, half-open `timestep_range`, normalized `x_center`
+and `x_range`, and a source-image `bbox`. Use `&line.text[token.text_range.clone()]`
+to recover a token. Blank-separated repeated labels remain separate tokens;
+spaces, combining characters and multi-code-point dictionary entries keep their
+complete byte ranges. Consumers that use UTF-16 offsets must convert explicitly.
+
+For a greedy CTC run `[s, e)`, the center is computed as:
+
+```text
+x_center = clamp(((s + e) / 2) * input_width / (time_steps * valid_width), 0, 1)
+```
+
+The division uses real preprocessing widths, including integer resize rounding
+and any truncation to the padded batch width. Interior selection boundaries are
+midpoints of neighboring centers; outer cells extend to `0` and `1`. The token
+score remains the first retained timestep confidence, preserving the existing
+mean recognition score. It does not estimate position accuracy.
+
+`x_range` follows the recognition crop **after** the tall-crop 270-degree rotation
+and any classifier 180-degree rotation. To obtain `bbox`, the pipeline maps cell
+corners across crop pixel centers (`0..width-1`, `0..height-1`) through the exact
+saved inverse crop transform and classifier rotation, then removes detection
+padding, rescales, and clips to the caller image. The actual perspective transform
+is saved before line-box clipping; edge-replicated and axis-aligned fallback crops
+retain their own transforms. Corner order follows the recognition cell and may
+therefore be rotated relative to source-image top-left order.
+
+### Compact selection geometry
+
+The opt-in OCR pipeline supplies `OcrTextAlignment::mapping: Option<OcrTextMapping>`
+for every returned recognition line. This stores an **unclipped** normalized-to-source
+transform once per line, so consumers can reconstruct cells without persisting every
+token's four corners. `matrix: [[f32; 3]; 3]` is row-major and multiplies the column
+vector `[u, v, 1]`, where `[0, 1]` spans the post-rotation recognition rectangle:
+
+```text
+h = matrix * [u, v, 1]^T
+source_point = [h[0] / h[2], h[1] / h[2]]
+```
+
+The matrix includes pixel-center scaling, tall-crop and classifier rotations,
+the perspective/fallback crop, replicated border, and detector resize/padding.
+It is retained before source-image clipping; do not replace it with a transform
+fitted to a clipped line or token quad. `source_size: [u32; 2]` stores source
+`[width, height]`, after EXIF correction for `run_path`.
+
+`mapping.project_point([u, v])` returns an unclipped point.
+`mapping.selection_quad([a, b])` maps `(a, 0)`, `(b, 0)`, `(b, 1)`, `(a, 1)` in
+recognition order and clips coordinates to `0..width-1`, `0..height-1`.
+The helpers return `None` for invalid projections; cell reconstruction also rejects
+empty source dimensions and intervals outside ordered `[0, 1]`. A matrix for a
+one-pixel-wide/high crop can be singular and still project points successfully.
+
+The coefficients use `f32`; retain their full values when storing a compact layout.
+Small floating-point rounding differences can remain between reconstructed and
+emitted token corners. `OcrTextAlignment::new` still constructs metadata without
+a mapping; attach one with `with_mapping`. Serde accepts older alignment JSON with
+no `mapping` field and omits this field when it is `None`.
+
+These full-height cells are suitable for selection hit testing and highlights.
+They are estimated CTC selection intervals rather than precise glyph boxes or
+word segmentation. Alignment gaps, variable-width punctuation and OCR errors can
+shift boundaries. Tokens emitted in right padding stay in the text and are clipped
+to the crop edge, possibly producing zero-width cells. Enabling the option adds
+per-token metadata and coordinate work, with no additional inference or model.
+The default path does not allocate alignment vectors or store crop transforms.
 
 Models are not bundled in the crate package. Applications should either let `ModelCache` download registered model assets, pre-populate a model directory during deployment, or provide explicit model paths in configuration.
 

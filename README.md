@@ -137,6 +137,80 @@ JSON uses `null` for absent metadata and still accepts older lines without these
 The CLI keeps its recognition-score, text, and box columns, then appends labeled
 `det_score`, `cls_label`, `cls_score`, and `rotation` values for enabled stages.
 
+### Token alignment and text selection
+
+Enable optional token output on the recognition config:
+
+```rust
+use rapidocr_core::{config::RapidOcrConfig, RapidOcr};
+
+fn main() -> rapidocr_core::OcrResult<()> {
+    let mut config = RapidOcrConfig::ppocr_v6_small("models");
+    config.rec = config.rec.map(|rec| rec.with_return_tokens(true));
+    let mut ocr = RapidOcr::new(config)?;
+    for line in ocr.run_path("image.png")?.lines {
+        if let Some(alignment) = &line.text_alignment {
+            for token in &alignment.tokens {
+                let text = &line.text[token.text_range.clone()];
+                println!("{text:?}\t{:?}\t{:?}", token.x_range, token.bbox.points);
+            }
+        }
+    }
+    Ok(())
+}
+```
+
+TOML uses `return_tokens = true` in the existing `[rec]` table. The CLI accepts
+`--return-tokens` and appends `text_alignment=<JSON>` to each recognition row.
+The option defaults to `false`; absent alignment is omitted from result JSON,
+so default text, scores, line boxes and serialized output keep their existing behavior.
+
+`OcrTextAlignment` records the padded recognition `input_width`, the crop's actual
+resized `valid_width`, output `time_steps`, and tokens in CTC decode order. Each
+`OcrToken` includes:
+
+| Field | Meaning |
+| --- | --- |
+| `text_range` | Half-open **UTF-8 byte offsets** in the line text; `{ "start": ..., "end": ... }` in JSON. |
+| `score` | Confidence at the first retained timestep, as used in the existing line-score mean. |
+| `timestep_range` | Half-open contiguous run of equal, non-blank greedy CTC labels. |
+| `x_center` | Run center in `[0, 1]` across the valid, horizontally oriented recognition crop. |
+| `x_range` | Estimated selection cell in those normalized coordinates. |
+| `bbox` | Selection cell mapped back to source-image pixel coordinates and clipped to the image bounds. |
+
+Spaces remain tokens. A dictionary entry may contain multiple Unicode code points,
+such as `🇨🇳`; ranges cover the complete entry and concatenate back to the exact
+recognized text. JavaScript consumers must explicitly convert UTF-8 byte offsets
+to UTF-16 indices or retain the original token slices. Tokens are not guaranteed
+to be single graphemes, and this output does not provide word segmentation.
+
+Selection boundaries are midpoints between adjacent CTC run centers, with the first
+and last cells extending to the crop edges. They use the actual resize and batch
+padding widths, not uniform character spacing. Their full-height quadrilaterals
+follow the saved perspective/fallback crop, edge replication, tall-crop quarter-turn,
+classifier rotation, and detector pipeline resize/padding. Corners retain their
+recognition-orientation order, which may run vertically or right-to-left in the
+source image. Coordinates use sampled pixel centers (`0..width-1`, `0..height-1`);
+`run_path` uses the image after EXIF correction, like existing line boxes.
+
+Each opt-in line also supplies `alignment.mapping`, with a row-major `3x3` `f32`
+matrix and source `[width, height]`. It maps normalized post-rotation crop points
+to **unclipped** source pixels; `selection_quad` reconstructs and clips a cell.
+Persisting this map once per line and the one-dimensional token intervals avoids
+storing every token quad. Keep the matrix coefficients at full `f32` precision;
+small rounding differences may remain. Older alignment JSON without `mapping`
+is accepted. See [compact selection geometry](crates/rapidocr-core/README.md#compact-selection-geometry)
+for matrix multiplication, corner ordering, and clipping.
+
+These are **estimated selection cells**, not precise glyph outlines. CTC confidence
+measures recognition confidence, not localization accuracy. Large gaps, narrow
+punctuation, model alignment error and missing text affect selection boundaries;
+tokens emitted beyond the valid crop are clipped and can have zero-width cells.
+Detection-only output has no alignment. Recognition-only output maps the whole
+input crop, including any applied classifier rotation. No additional model or
+Python runtime is required. See the [core API notes](crates/rapidocr-core/README.md)
+for the coordinate formula and output details.
+
 ### Detector input limits
 
 Detection uses dynamic input shapes. A thin image can therefore request a much larger tensor when

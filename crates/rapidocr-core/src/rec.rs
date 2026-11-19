@@ -11,7 +11,7 @@ use crate::{
         RuntimeErrorKind,
     },
     inference::OnnxSession,
-    types::{OcrTimings, RecText},
+    types::{AlignedToken, OcrTimings, RecAlignment, RecText},
     OcrRuntime,
 };
 
@@ -96,11 +96,18 @@ impl TextRecognizer {
                 batch_w,
             ));
 
+            let mut valid_widths = self
+                .cfg
+                .return_tokens
+                .then(|| Vec::with_capacity(chunk.len()));
             for (i, idx) in chunk.iter().enumerate() {
                 cancellation.checkpoint()?;
                 let img = &imgs[*idx];
-                let norm = self.resize_norm_img(img, max_wh_ratio, cancellation)?;
+                let (norm, valid_width) = self.resize_norm_img(img, batch_w, cancellation)?;
                 batch.slice_mut(s![i, .., .., ..]).assign(&norm);
+                if let Some(widths) = &mut valid_widths {
+                    widths.push(valid_width);
+                }
             }
             timings.rec_preprocess_ms += elapsed_ms(start);
 
@@ -116,7 +123,16 @@ impl TextRecognizer {
             })?;
             for i in 0..pred.shape()[0] {
                 cancellation.checkpoint()?;
-                results[chunk[i]] = Some(self.decode_one(pred.slice(s![i, .., ..]))?);
+                let alignment_widths = valid_widths.as_ref().map(|widths| (batch_w, widths[i]));
+                results[chunk[i]] = Some(
+                    decode_ctc(
+                        pred.slice(s![i, .., ..]),
+                        &self.characters,
+                        alignment_widths,
+                        &self.cfg.dict_path,
+                    )
+                    .map_err(|error| error.with_model_path(&self.cfg.model_path))?,
+                );
             }
             timings.rec_decode_ms += elapsed_ms(start);
         }
@@ -141,16 +157,15 @@ impl TextRecognizer {
     fn resize_norm_img(
         &self,
         img: &RgbImage,
-        max_wh_ratio: f32,
+        img_w: usize,
         cancellation: &OcrCancellationToken,
-    ) -> Result<ndarray::Array3<f32>> {
+    ) -> Result<(ndarray::Array3<f32>, usize)> {
         let [channels, img_h, _] = self.cfg.image_shape;
         if channels != 3 {
             return Err(OcrError::invalid_config(
                 "only 3-channel recognition input is supported",
             ));
         }
-        let img_w = (img_h as f32 * max_wh_ratio) as usize;
         let ratio = img.width() as f32 / img.height().max(1) as f32;
         let resized_w = ((img_h as f32 * ratio).ceil() as usize).min(img_w).max(1);
         let resized = resize_linear_opencv(img, resized_w as u32, img_h as u32, cancellation)?;
@@ -163,53 +178,115 @@ impl TextRecognizer {
                 out[[c, y as usize, x as usize]] = pixel[2 - c] as f32 / 255.0 / 0.5 - 1.0;
             }
         }
-        Ok(out)
+        Ok((out, resized_w))
     }
+}
 
-    fn decode_one(&self, logits: ndarray::ArrayView2<'_, f32>) -> Result<RecText> {
-        let mut text = String::new();
-        let mut confs = Vec::new();
-        let mut last_idx = usize::MAX;
+fn decode_ctc(
+    logits: ndarray::ArrayView2<'_, f32>,
+    characters: &[String],
+    alignment_widths: Option<(usize, usize)>,
+    dict_path: &Path,
+) -> Result<RecText> {
+    let mut text = String::new();
+    let mut confs = Vec::new();
+    let mut last_idx = usize::MAX;
+    let mut tokens = alignment_widths.map(|_| Vec::<AlignedToken>::new());
 
-        for timestep in logits.outer_iter() {
-            let (idx, prob) = timestep
-                .iter()
-                .enumerate()
-                .max_by(|(_, a), (_, b)| a.total_cmp(b))
-                .map(|(idx, prob)| (idx, *prob))
-                .unwrap_or((0, 0.0));
-            if !prob.is_finite() {
-                return Err(OcrError::incompatible_model(
-                    "recognition output contains a non-finite confidence",
-                )
-                .with_model_path(&self.cfg.model_path));
-            }
-
-            // CTC decode: index 0 is blank and repeated non-blank labels collapse
-            // into a single character.
-            if idx == 0 || idx == last_idx {
-                last_idx = idx;
-                continue;
-            }
-
-            let ch = self.characters.get(idx).ok_or_else(|| {
-                OcrError::incompatible_model(format!(
-                    "recognition class {idx} is not present in the dictionary"
-                ))
-                .with_model_path(&self.cfg.dict_path)
-            })?;
-            text.push_str(ch);
-            confs.push(prob);
-            last_idx = idx;
+    for (time, timestep) in logits.outer_iter().enumerate() {
+        let (idx, prob) = timestep
+            .iter()
+            .enumerate()
+            .max_by(|(_, a), (_, b)| a.total_cmp(b))
+            .map(|(idx, prob)| (idx, *prob))
+            .unwrap_or((0, 0.0));
+        if !prob.is_finite() {
+            return Err(OcrError::incompatible_model(
+                "recognition output contains a non-finite confidence",
+            ));
         }
 
-        let score = if confs.is_empty() {
-            0.0
-        } else {
-            confs.iter().sum::<f32>() / confs.len() as f32
-        };
+        // CTC decode: index 0 is blank and repeated non-blank labels collapse
+        // into a single dictionary token, which can contain several code points.
+        if idx == 0 || idx == last_idx {
+            if idx != 0 {
+                if let Some(token) = tokens.as_mut().and_then(|tokens| tokens.last_mut()) {
+                    token.timestep_range.end = time + 1;
+                }
+            }
+            last_idx = idx;
+            continue;
+        }
 
-        Ok(RecText { text, score })
+        let ch = characters.get(idx).ok_or_else(|| {
+            OcrError::incompatible_model(format!(
+                "recognition class {idx} is not present in the dictionary"
+            ))
+            .with_model_path(dict_path)
+        })?;
+        let text_start = text.len();
+        text.push_str(ch);
+        confs.push(prob);
+        if let Some(tokens) = &mut tokens {
+            tokens.push(AlignedToken {
+                text_range: text_start..text.len(),
+                score: prob,
+                timestep_range: time..time + 1,
+                x_center: 0.0,
+                x_range: [0.0, 0.0],
+            });
+        }
+        last_idx = idx;
+    }
+
+    let score = if confs.is_empty() {
+        0.0
+    } else {
+        confs.iter().sum::<f32>() / confs.len() as f32
+    };
+
+    let alignment = match (alignment_widths, tokens) {
+        (Some((input_width, valid_width)), Some(mut tokens)) => {
+            let time_steps = logits.nrows();
+            assign_selection_intervals(&mut tokens, time_steps, input_width, valid_width);
+            Some(RecAlignment {
+                input_width,
+                valid_width,
+                time_steps,
+                tokens,
+            })
+        }
+        _ => None,
+    };
+
+    Ok(RecText {
+        text,
+        score,
+        alignment,
+    })
+}
+
+fn assign_selection_intervals(
+    tokens: &mut [AlignedToken],
+    time_steps: usize,
+    input_width: usize,
+    valid_width: usize,
+) {
+    // One model timestep covers input_width / time_steps padded input pixels.
+    // Divide by the actual resized crop width, not its ideal aspect ratio, so
+    // short crops do not expand across the padding of a wider batch member.
+    let scale = input_width as f64 / time_steps.max(1) as f64 / valid_width.max(1) as f64;
+    for token in tokens.iter_mut() {
+        let center = (token.timestep_range.start as f64 + token.timestep_range.end as f64) * 0.5;
+        token.x_center = (center * scale).clamp(0.0, 1.0) as f32;
+    }
+    let mut start = 0.0;
+    for index in 0..tokens.len() {
+        let end = tokens
+            .get(index + 1)
+            .map_or(1.0, |next| (tokens[index].x_center + next.x_center) * 0.5);
+        tokens[index].x_range = [start, end];
+        start = end;
     }
 }
 
@@ -371,6 +448,166 @@ fn read_character_file(path: &Path) -> Result<Vec<String>> {
 mod tests {
     use super::*;
     use crate::config::RecInputLimits;
+
+    fn ctc_prediction(sequence: &[(usize, f32)], classes: usize) -> ndarray::Array2<f32> {
+        let mut prediction = ndarray::Array2::zeros((sequence.len(), classes));
+        for (time, (label, score)) in sequence.iter().enumerate() {
+            prediction[[time, *label]] = *score;
+        }
+        prediction
+    }
+
+    #[test]
+    fn token_alignment_preserves_ctc_text_scores_and_utf8_ranges() {
+        let characters = ["blank", "a", "🇨🇳", " ", "e\u{301}"].map(str::to_owned);
+        let prediction = ctc_prediction(
+            &[
+                (0, 1.0),
+                (1, 0.8),
+                (1, 0.1),
+                (0, 1.0),
+                (1, 0.6),
+                (2, 0.9),
+                (2, 0.2),
+                (3, 0.5),
+                (4, 0.7),
+                (0, 1.0),
+            ],
+            characters.len(),
+        );
+        let dict_path = Path::new("dictionary.txt");
+        let plain = decode_ctc(prediction.view(), &characters, None, dict_path).unwrap();
+        let aligned =
+            decode_ctc(prediction.view(), &characters, Some((400, 400)), dict_path).unwrap();
+
+        assert_eq!(plain.text, "aa🇨🇳 e\u{301}");
+        assert_eq!(plain.text, aligned.text);
+        assert_eq!(plain.score, aligned.score);
+        assert!(plain.alignment.is_none());
+        let alignment = aligned.alignment.unwrap();
+        let tokens = alignment.tokens;
+        assert_eq!(
+            tokens
+                .iter()
+                .map(|token| token.text_range.clone())
+                .collect::<Vec<_>>(),
+            vec![0..1, 1..2, 2..10, 10..11, 11..14]
+        );
+        assert_eq!(
+            tokens
+                .iter()
+                .map(|token| token.timestep_range.clone())
+                .collect::<Vec<_>>(),
+            vec![1..3, 4..5, 5..7, 7..8, 8..9]
+        );
+        assert_eq!(
+            tokens.iter().map(|token| token.score).collect::<Vec<_>>(),
+            vec![0.8, 0.6, 0.9, 0.5, 0.7]
+        );
+        assert_eq!(
+            tokens
+                .iter()
+                .map(|token| &aligned.text[token.text_range.clone()])
+                .collect::<String>(),
+            aligned.text
+        );
+        assert_eq!(tokens[2].x_center, 0.6);
+        assert_eq!(tokens[2].x_range, [0.525, 0.675]);
+    }
+
+    #[test]
+    fn selection_intervals_use_real_valid_width_and_exclude_batch_padding() {
+        let characters = ["blank", "a", "b"].map(str::to_owned);
+        let make_prediction = |time_steps| {
+            let mut sequence = vec![(0, 1.0); time_steps];
+            sequence[10..13].fill((1, 0.9));
+            sequence[20] = (2, 0.8);
+            ctc_prediction(&sequence, characters.len())
+        };
+        let single = decode_ctc(
+            make_prediction(100).view(),
+            &characters,
+            Some((400, 133)),
+            Path::new("dict.txt"),
+        )
+        .unwrap();
+        let padded = decode_ctc(
+            make_prediction(200).view(),
+            &characters,
+            Some((800, 133)),
+            Path::new("dict.txt"),
+        )
+        .unwrap();
+        let single = single.alignment.unwrap();
+        let padded = padded.alignment.unwrap();
+        for (single, padded) in single.tokens.iter().zip(&padded.tokens) {
+            assert_eq!(single.x_center, padded.x_center);
+            assert_eq!(single.x_range, padded.x_range);
+        }
+        assert!((padded.tokens[0].x_center - 46.0 / 133.0).abs() < 1e-6);
+        assert!((padded.tokens[0].x_range[1] - 64.0 / 133.0).abs() < 1e-6);
+
+        let clipped = decode_ctc(
+            make_prediction(200).view(),
+            &characters,
+            Some((800, 1)),
+            Path::new("dict.txt"),
+        )
+        .unwrap();
+        let clipped = clipped.alignment.unwrap();
+        assert_eq!(clipped.tokens[0].x_range, [0.0, 1.0]);
+        assert_eq!(clipped.tokens[1].x_range, [1.0, 1.0]);
+        assert!(clipped.tokens.iter().all(|token| token.x_center == 1.0));
+    }
+
+    #[test]
+    fn native_batch_alignment_tracks_resized_widths_after_reordering() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+        let cfg = RecConfig::new(
+            root.join("paired-rec.onnx"),
+            root.join("one-token.txt"),
+            [3, 48, 320],
+            2,
+        )
+        .with_return_tokens(true);
+        let mut recognizer = TextRecognizer::new(cfg, InferenceOptions::default(), None).unwrap();
+        let result = recognizer
+            .recognize_timed(
+                &[RgbImage::new(451, 49), RgbImage::new(101, 33)],
+                &OcrCancellationToken::new(),
+            )
+            .unwrap();
+        assert_eq!(result.texts[0].score, 0.2);
+        assert_eq!(result.texts[1].score, 0.96);
+        let wide = result.texts[0].alignment.as_ref().unwrap();
+        let narrow = result.texts[1].alignment.as_ref().unwrap();
+        assert_eq!(wide.input_width, 441);
+        assert_eq!(wide.valid_width, 441);
+        assert_eq!(narrow.input_width, 441);
+        assert_eq!(narrow.valid_width, 147);
+        assert_eq!(wide.tokens[0].x_center, 0.25);
+        assert_eq!(narrow.tokens[0].x_center, 0.75);
+    }
+
+    #[test]
+    fn missing_ctc_dictionary_entry_keeps_its_dictionary_error_path() {
+        let prediction = ctc_prediction(&[(2, 0.9)], 3);
+        let characters = ["blank", "a"].map(str::to_owned);
+        for alignment in [None, Some((320, 100))] {
+            let error = decode_ctc(
+                prediction.view(),
+                &characters,
+                alignment,
+                Path::new("dict.txt"),
+            )
+            .err()
+            .unwrap()
+            .with_model_path(Path::new("rec.onnx"));
+            assert!(
+                matches!(error, OcrError::Model { path: Some(ref path), .. } if path == Path::new("dict.txt"))
+            );
+        }
+    }
 
     #[test]
     fn recognition_limits_reject_amplified_thin_inputs_before_allocation() {

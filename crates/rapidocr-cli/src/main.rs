@@ -63,6 +63,10 @@ struct Args {
     #[arg(long)]
     no_rec: bool,
 
+    /// Include CTC token alignment and estimated text-selection cells.
+    #[arg(long)]
+    return_tokens: bool,
+
     #[arg(long, default_value_t = 1)]
     repeat: usize,
 
@@ -210,6 +214,9 @@ fn main() -> Result<()> {
                     rotation.label, rotation.score, rotation.applied_degrees
                 );
             }
+            if let Some(alignment) = line.text_alignment {
+                print!("\ttext_alignment={}", serde_json::to_string(&alignment)?);
+            }
             println!();
         }
     }
@@ -259,6 +266,11 @@ fn apply_overrides(cfg: &mut RapidOcrConfig, args: &Args) {
     if args.directml {
         cfg.inference.execution_provider = ExecutionProvider::DirectMl;
     }
+    if args.return_tokens {
+        if let Some(rec) = &mut cfg.rec {
+            rec.return_tokens = true;
+        }
+    }
 }
 
 #[cfg(test)]
@@ -271,6 +283,17 @@ mod tests {
     };
 
     static NEXT_CONFIG: AtomicU64 = AtomicU64::new(0);
+
+    #[test]
+    fn return_tokens_is_an_explicit_enable_override() {
+        let mut cfg = RapidOcrConfig::ppocr_v6_small("models");
+        let args = Args::try_parse_from(["rapidocr", "--return-tokens"]).unwrap();
+        apply_overrides(&mut cfg, &args);
+        assert!(cfg.rec.as_ref().unwrap().return_tokens);
+        let args = Args::try_parse_from(["rapidocr"]).unwrap();
+        apply_overrides(&mut cfg, &args);
+        assert!(cfg.rec.as_ref().unwrap().return_tokens);
+    }
 
     struct TestConfig(PathBuf);
 

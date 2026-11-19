@@ -53,9 +53,10 @@ use crate::{
     det::TextDetector,
     image_ops::{
         apply_vertical_padding, crop_perspective, load_rgb_image, resize_image_within_bounds,
+        CropTransform,
     },
     rec::TextRecognizer,
-    types::{OcrLine, OcrOutput, OcrTimings, Quad, TimedOcrOutput},
+    types::{OcrLine, OcrOutput, OcrTextAlignment, OcrTimings, OcrToken, Quad, TimedOcrOutput},
 };
 
 /// Stateful OCR pipeline runner.
@@ -232,11 +233,13 @@ impl RapidOcr {
 
         let detection_enabled = self.detector.is_some();
         let needs_recognition = self.recognizer.is_some();
-        let (mut lines, crops) = if detection_enabled {
-            let (lines, crops, det_timings) =
-                self.detect_and_crop_timed(image, needs_recognition, cancellation)?;
-            timings.add_assign(&det_timings);
-            (lines, crops)
+        let return_tokens =
+            needs_recognition && self.cfg.rec.as_ref().is_some_and(|rec| rec.return_tokens);
+        let (mut lines, crops, transforms) = if detection_enabled {
+            let det =
+                self.detect_and_crop_timed(image, needs_recognition, return_tokens, cancellation)?;
+            timings.add_assign(&det.timings);
+            (det.lines, det.crops, det.transforms)
         } else {
             let bbox = Quad::from_xyxy(
                 0.0,
@@ -244,7 +247,11 @@ impl RapidOcr {
                 image.width().saturating_sub(1) as f32,
                 image.height().saturating_sub(1) as f32,
             );
-            (vec![OcrLine::detection_only(bbox)], vec![image.clone()])
+            (
+                vec![OcrLine::detection_only(bbox)],
+                vec![image.clone()],
+                return_tokens.then(|| vec![CropTransform::identity(image.width(), image.height())]),
+            )
         };
         cancellation.checkpoint()?;
 
@@ -268,33 +275,71 @@ impl RapidOcr {
 
         let start = Instant::now();
         cancellation.checkpoint()?;
-        let lines = lines
-            .into_iter()
-            .zip(rec.texts)
-            .filter_map(|(mut line, text)| {
-                if text.text.trim().is_empty() {
-                    return None;
-                }
-                if detection_enabled && text.score < self.cfg.text_score {
-                    return None;
-                }
-                line.text = text.text;
-                line.score = text.score;
-                Some(line)
-            })
-            .collect();
+        let mut output_lines = Vec::with_capacity(lines.len());
+        for (index, (mut line, text)) in lines.into_iter().zip(rec.texts).enumerate() {
+            cancellation.checkpoint()?;
+            if text.text.trim().is_empty()
+                || (detection_enabled && text.score < self.cfg.text_score)
+            {
+                continue;
+            }
+            if let Some(alignment) = text.alignment {
+                let transform = transforms
+                    .as_ref()
+                    .and_then(|transforms| transforms.get(index))
+                    .ok_or_else(|| {
+                        OcrError::runtime(
+                            RuntimeErrorKind::Execution,
+                            "recognition crop transform is missing",
+                        )
+                    })?;
+                let applied_degrees = line
+                    .rotation
+                    .as_ref()
+                    .map_or(0, |rotation| rotation.applied_degrees);
+                let mapping = transform.selection_mapping(applied_degrees);
+                let tokens = alignment
+                    .tokens
+                    .into_iter()
+                    .map(|token| {
+                        let bbox = transform.selection_quad(token.x_range, applied_degrees);
+                        OcrToken::new(
+                            token.text_range,
+                            token.score,
+                            token.timestep_range,
+                            token.x_center,
+                            token.x_range,
+                            bbox,
+                        )
+                    })
+                    .collect();
+                line.text_alignment = Some(
+                    OcrTextAlignment::new(
+                        alignment.input_width,
+                        alignment.valid_width,
+                        alignment.time_steps,
+                        tokens,
+                    )
+                    .with_mapping(mapping),
+                );
+            }
+            line.text = text.text;
+            line.score = text.score;
+            output_lines.push(line);
+        }
         timings.output_filter_ms = elapsed_ms(start);
         timings.total_ms = elapsed_ms(total_start);
 
-        Ok(TimedOcrOutput::new(OcrOutput::new(lines), timings))
+        Ok(TimedOcrOutput::new(OcrOutput::new(output_lines), timings))
     }
 
     fn detect_and_crop_timed(
         &mut self,
         image: &image::RgbImage,
         needs_crops: bool,
+        return_transforms: bool,
         cancellation: &OcrCancellationToken,
-    ) -> Result<(Vec<OcrLine>, Vec<image::RgbImage>, OcrTimings)> {
+    ) -> Result<DetectedCrops> {
         let mut timings = OcrTimings::default();
         cancellation.checkpoint()?;
         let original_width = image.width();
@@ -325,11 +370,23 @@ impl RapidOcr {
         // Crops are extracted from the exact padded detector image that produced
         // the boxes. Only after crop generation do we remove padding and scale
         // coordinates back to the caller's original image space.
+        let mut transforms = return_transforms.then(|| Vec::with_capacity(lines.len()));
         let crops = if needs_crops {
             let mut crops = Vec::with_capacity(lines.len());
             for line in &lines {
                 cancellation.checkpoint()?;
-                crops.push(crop_perspective(&det_image, &line.bbox)?);
+                let (crop, transform) =
+                    crop_perspective(&det_image, &line.bbox, return_transforms)?;
+                crops.push(crop);
+                if let (Some(transforms), Some(mut transform)) = (&mut transforms, transform) {
+                    transform.map_pipeline_to_source(
+                        ratio_w,
+                        ratio_h,
+                        padding_top,
+                        image.dimensions(),
+                    );
+                    transforms.push(transform);
+                }
             }
             crops
         } else {
@@ -349,8 +406,20 @@ impl RapidOcr {
         }
         timings.crop_ms = elapsed_ms(start);
 
-        Ok((lines, crops, timings))
+        Ok(DetectedCrops {
+            lines,
+            crops,
+            transforms,
+            timings,
+        })
     }
+}
+
+struct DetectedCrops {
+    lines: Vec<OcrLine>,
+    crops: Vec<image::RgbImage>,
+    transforms: Option<Vec<CropTransform>>,
+    timings: OcrTimings,
 }
 
 fn elapsed_ms(start: Instant) -> f64 {

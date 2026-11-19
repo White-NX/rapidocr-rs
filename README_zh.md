@@ -93,6 +93,44 @@ CLI 保留识别分数、文本、检测框三列，并为已运行的阶段追�
 
 从 `0.2.2` 升级的指引集中在 [v0.3.0 发布说明](https://github.com/White-NX/rapidocr-rs/releases/tag/v0.3.0)。
 
+## 可选的 token 对齐与文本选择
+
+通过 `RecConfig::with_return_tokens(true)`，或在现有 TOML `[rec]` 表中设置
+`return_tokens = true`，可获得每行的 `text_alignment`。CLI 使用 `--return-tokens`，
+在识别行末追加 `text_alignment=<JSON>`。默认关闭；未开启或仅检测时，该字段为
+`None`，并从 JSON 中省略，原有文本、分数与行框输出保持一致。
+
+`OcrTextAlignment` 返回批次填充宽度 `input_width`、该行实际缩放宽度
+`valid_width`、CTC 输出时间步数 `time_steps` 和按解码顺序排列的 `tokens`。
+每个 `OcrToken` 包含：
+
+- `text_range`：行文本中的半开 **UTF-8 字节范围**，JSON 使用 `{ "start": ..., "end": ... }`。
+- `score` 与 `timestep_range`：首个保留时间步的识别置信度，以及连续重复的非 blank 标签跨度。
+- `x_center` 与 `x_range`：在识别图朝向下归一化到 `[0, 1]` 的对齐中心和估算选择区间。
+- `bbox`：经实际裁切、旋转、缩放及补边的逆变换后，裁剪到原图边界的四边形。
+
+空格和国旗 emoji 等多码点词表 token 会完整保留，各 token 的文本范围可以拼回
+完整识别文本。Rust 可使用 `&line.text[token.text_range.clone()]` 获取文本；
+JavaScript 若使用字符串索引，需要显式将 UTF-8 字节偏移转换为 UTF-16 偏移。
+
+选择区间的内部边界取相邻 CTC 对齐中心的中点，首尾延伸到裁切图边缘。
+归一化坐标使用实际缩放和批次填充宽度，并遵循竖长图 270° 旋转及分类器
+180° 旋转后的识别朝向；原图框的角点顺序也保留这一朝向。
+
+开启后，每行还会返回 `alignment.mapping`，包含按行存放的 `3x3` `f32` 矩阵
+和原图 `[width, height]`。矩阵把旋转后的归一化裁切坐标映射为**未经边界裁剪**
+的原图坐标；`selection_quad` 可以重建选择框，再裁剪到原图边界。
+每行保存一个矩阵及各 token 的一维区间，即可避免保存每个 token 的四个角点。
+存储时应保留完整的 `f32` 系数；重建与直接输出的角点可能有细小浮点舍入差异。
+旧的对齐 JSON 即使不含 `mapping` 也能读取，原有构造函数保持可用。
+[紧凑选择坐标说明](crates/rapidocr-core/README.md#compact-selection-geometry)
+给出了矩阵乘法、角点顺序及裁剪约定。
+
+这些框覆盖整行高度，属于**估算的选择单元格**；CTC 置信度不能说明定位精度。
+标点宽度、大空隙与识别错误仍可能影响边界，补边中产生的 token 也可能被裁成零宽。
+无需额外模型或 Python 运行时。[英文 API 说明](crates/rapidocr-core/README.md)
+包含坐标公式及详细约定。
+
 ## 由应用部署运行时
 
 模型下载与 ONNX Runtime 二进制下载分别由 `model-download` 和 `download-binaries`

@@ -149,3 +149,101 @@ fn empty_detection_output_still_succeeds_with_classification_enabled() {
     config.det.as_mut().unwrap().model_path = common::model_path("constant-det.onnx");
     assert!(run(config).lines.is_empty());
 }
+
+#[test]
+fn opt_in_token_alignment_preserves_default_recognition_json() {
+    let image = RgbImage::new(197, 59);
+    let mut config = common::recognition_config("constant-rec.onnx");
+    let plain = RapidOcr::new(config.clone())
+        .unwrap()
+        .run_image(&image)
+        .unwrap();
+    assert!(plain.lines[0].text_alignment.is_none());
+    let plain_json = serde_json::to_value(&plain).unwrap();
+    assert!(plain_json["lines"][0].get("text_alignment").is_none());
+
+    config.rec.as_mut().unwrap().return_tokens = true;
+    let output = RapidOcr::new(config).unwrap().run_image(&image).unwrap();
+    let line = &output.lines[0];
+    let alignment = line.text_alignment.as_ref().unwrap();
+    assert_eq!(alignment.input_width, 320);
+    assert_eq!(alignment.valid_width, 161);
+    assert_eq!(alignment.time_steps, 2);
+    assert_eq!(alignment.tokens.len(), 1);
+    let mapping = alignment.mapping.as_ref().unwrap();
+    assert_eq!(mapping.source_size, [197, 59]);
+    assert_eq!(
+        mapping.matrix,
+        [[196.0, 0.0, 0.0], [0.0, 58.0, 0.0], [0.0, 0.0, 1.0]]
+    );
+    let token = &alignment.tokens[0];
+    assert_eq!(&line.text[token.text_range.clone()], "A");
+    assert_eq!(token.text_range, 0..1);
+    assert_eq!(token.timestep_range, 0..1);
+    assert_eq!(token.score, line.score);
+    assert_eq!(token.x_range, [0.0, 1.0]);
+    assert_eq!(token.bbox.points, line.bbox.points);
+    assert_eq!(
+        mapping.selection_quad(token.x_range).unwrap().points,
+        token.bbox.points
+    );
+    let mut output_json = serde_json::to_value(&output).unwrap();
+    output_json["lines"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("text_alignment");
+    assert_eq!(output_json, plain_json);
+}
+
+#[test]
+fn token_cells_keep_their_line_and_orientation_after_filtering() {
+    let mut config = paired_config(true);
+    config.text_score = 0.0;
+    let plain = run(config.clone());
+    config.rec.as_mut().unwrap().return_tokens = true;
+    let output = run(config.clone());
+    for (line, plain) in output.lines.iter().zip(&plain.lines) {
+        assert_eq!(line.bbox.points, plain.bbox.points);
+        assert_eq!(line.text, plain.text);
+        assert_eq!(line.score, plain.score);
+        let alignment = line.text_alignment.as_ref().unwrap();
+        let token = &alignment.tokens[0];
+        let mapping = alignment.mapping.as_ref().unwrap();
+        assert_eq!(mapping.source_size, [128, 128]);
+        let reconstructed = mapping.selection_quad(token.x_range).unwrap();
+        for (actual, expected) in reconstructed.points.iter().zip(token.bbox.points) {
+            assert!((actual[0] - expected[0]).abs() < 1e-3);
+            assert!((actual[1] - expected[1]).abs() < 1e-3);
+        }
+        assert_eq!(token.score, line.score);
+        assert_eq!(&line.text[token.text_range.clone()], "A");
+        assert!(token
+            .bbox
+            .points
+            .iter()
+            .all(|[x, y]| (0.0..=127.0).contains(x) && (0.0..=127.0).contains(y)));
+    }
+    let upright = &output.lines[0].text_alignment.as_ref().unwrap().tokens[0]
+        .bbox
+        .points;
+    assert!(upright[0][0] < upright[1][0]);
+    let rotated = &output.lines[1].text_alignment.as_ref().unwrap().tokens[0]
+        .bbox
+        .points;
+    assert!(rotated[0][0] > rotated[1][0]);
+    assert!(rotated[0][1] > rotated[3][1]);
+
+    config.text_score = 0.5;
+    let filtered = run(config.clone());
+    assert_eq!(filtered.lines.len(), 1);
+    assert_eq!(
+        serde_json::to_value(&filtered.lines[0]).unwrap(),
+        serde_json::to_value(&output.lines[1]).unwrap()
+    );
+
+    config.pipeline = PipelineConfig::detection_only();
+    assert!(run(config)
+        .lines
+        .iter()
+        .all(|line| line.text_alignment.is_none()));
+}

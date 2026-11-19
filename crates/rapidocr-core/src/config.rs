@@ -791,6 +791,13 @@ pub struct RecConfig {
     pub image_shape: [usize; 3],
     /// Maximum number of crops processed per inference call.
     pub batch_size: usize,
+    /// Return CTC token alignment and estimated selection cells with each line.
+    ///
+    /// Disabled by default. Tokens retain UTF-8 text ranges, including spaces
+    /// and dictionary entries containing multiple Unicode code points. Their
+    /// coordinates estimate selection boundaries, not precise glyph bounds.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub return_tokens: bool,
     /// Resource limits checked before allocating each recognition input batch.
     #[serde(default)]
     pub input_limits: RecInputLimits,
@@ -809,6 +816,7 @@ impl RecConfig {
             dict_path: dict_path.into(),
             image_shape,
             batch_size,
+            return_tokens: false,
             input_limits: RecInputLimits::default(),
         }
     }
@@ -816,6 +824,12 @@ impl RecConfig {
     /// Returns a copy using explicit recognition input resource limits.
     pub fn with_input_limits(mut self, input_limits: RecInputLimits) -> Self {
         self.input_limits = input_limits;
+        self
+    }
+
+    /// Enables or disables CTC token alignment and estimated selection cells.
+    pub fn with_return_tokens(mut self, return_tokens: bool) -> Self {
+        self.return_tokens = return_tokens;
         self
     }
 
@@ -1014,6 +1028,7 @@ fn validate_strict_schema(value: &toml::Value) -> Result<()> {
                 "dict_path",
                 "image_shape",
                 "batch_size",
+                "return_tokens",
                 "input_limits",
             ][..],
         ),
@@ -1203,6 +1218,20 @@ fn ensure_image_shape(shape: [usize; 3], label: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn token_output_defaults_to_disabled_and_round_trips_in_strict_toml() {
+        let mut config = RapidOcrConfig::ppocr_v6_small("models");
+        let legacy = config.to_toml_string().unwrap();
+        assert!(!legacy.contains("return_tokens"));
+        let loaded = RapidOcrConfig::from_toml_str_strict(&legacy).unwrap();
+        assert!(!loaded.rec.unwrap().return_tokens);
+
+        config.rec.as_mut().unwrap().return_tokens = true;
+        let enabled = config.to_toml_string().unwrap();
+        let loaded = RapidOcrConfig::from_toml_str_strict(&enabled).unwrap();
+        assert!(loaded.rec.unwrap().return_tokens);
+    }
 
     #[test]
     fn nullable_json_limits_remain_compatible() {
