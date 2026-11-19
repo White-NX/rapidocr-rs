@@ -95,6 +95,8 @@ CLI 保留识别分数、文本、检测框三列，并为已运行的阶段追�
 
 ## 可选的 token 对齐与文本选择
 
+本功能自 `0.3.1` 提供，详见 [v0.3.1 发布说明](https://github.com/White-NX/rapidocr-rs/releases/tag/v0.3.1)。
+
 通过 `RecConfig::with_return_tokens(true)`，或在现有 TOML `[rec]` 表中设置
 `return_tokens = true`，可获得每行的 `text_alignment`。CLI 使用 `--return-tokens`，
 在识别行末追加 `text_alignment=<JSON>`。默认关闭；未开启或仅检测时，该字段为
@@ -137,7 +139,7 @@ JavaScript 若使用字符串索引，需要显式将 UTF-8 字节偏移转换�
 控制，默认均启用。应用自行提供模型和运行时 DLL 时，可以使用：
 
 ```toml
-rapidocr-core = { version = "0.3.0", default-features = false, features = ["load-dynamic", "tokio", "directml"] }
+rapidocr-core = { version = "0.3.1", default-features = false, features = ["load-dynamic", "tokio", "directml"] }
 ```
 
 先调用 `OcrRuntime::load_from("runtime/onnxruntime.dll")`，再通过

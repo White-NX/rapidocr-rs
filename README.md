@@ -260,7 +260,7 @@ before downloading so cooperating processes do not race over the same part file.
 
 Model downloading is enabled by the default `model-download` Cargo feature. Applications that
 pre-populate model files can avoid the blocking `reqwest` dependency with
-`rapidocr-core = { version = "0.3.0", default-features = false, features = ["download-binaries"] }`.
+`rapidocr-core = { version = "0.3.1", default-features = false, features = ["download-binaries"] }`.
 
 ## Runtime Deployment
 
@@ -277,7 +277,7 @@ Model assets and the native ONNX Runtime library have separate Cargo features:
 Applications shipping their own models and native runtime can use:
 
 ```toml
-rapidocr-core = { version = "0.3.0", default-features = false, features = ["load-dynamic", "tokio", "directml"] }
+rapidocr-core = { version = "0.3.1", default-features = false, features = ["load-dynamic", "tokio", "directml"] }
 ```
 
 ```rust
@@ -308,7 +308,7 @@ including `DirectML.dll`.
 On Windows, enable DirectML inference on a DirectX 12-capable GPU with:
 
 ```toml
-rapidocr-core = { version = "0.3.0", features = ["directml"] }
+rapidocr-core = { version = "0.3.1", features = ["directml"] }
 ```
 
 Select `ExecutionProvider::DirectMl` in `InferenceOptions` to use it. DirectML initialization is
@@ -332,7 +332,7 @@ recognition batches check the same token between bounded work units.
 Enable the optional Tokio convenience layer with:
 
 ```toml
-rapidocr-core = { version = "0.3.0", features = ["tokio"] }
+rapidocr-core = { version = "0.3.1", features = ["tokio"] }
 ```
 
 `TokioRapidOcr` owns a dedicated OCR worker thread and a bounded request queue,
@@ -462,6 +462,7 @@ Developer workflows, parity fixture generation, ignored test gates, local config
 
 Additional project notes:
 
+- [v0.3.1 release notes](https://github.com/White-NX/rapidocr-rs/releases/tag/v0.3.1) describe optional token alignment and compact source-image selection mapping.
 - [v0.3.0 release notes](https://github.com/White-NX/rapidocr-rs/releases/tag/v0.3.0) cover release changes and migration from `0.2.2`.
 - [parity-gaps.md](parity-gaps.md) tracks known behavior differences from Python RapidOCR.
 - [benchmark-baseline.md](benchmark-baseline.md) records the curated benchmark baseline.
