@@ -254,13 +254,13 @@ Known parity gaps that are not strict gates are tracked in [../parity-gaps.md](.
 Run the Rust CLI in a hot loop, reusing the loaded OCR pipeline:
 
 ```powershell
-cargo run --release -p rapidocr-cli -- --image "$env:RAPIDOCR_PYTHON_REPO\python\tests\test_files\ch_en_num.jpg" --model-dir models --no-download --repeat 20 --quiet
+cargo run --release -p rapidocr-cli -- --image "$env:RAPIDOCR_PYTHON_REPO\python\tests\test_files\ch_en_num.jpg" --model-dir models --no-download --warmup 1 --repeat 20 --quiet
 ```
 
 Emit the Rust timing summary as JSON:
 
 ```powershell
-cargo run --release -p rapidocr-cli -- --image "$env:RAPIDOCR_PYTHON_REPO\python\tests\test_files\ch_en_num.jpg" --model-dir models --no-download --repeat 20 --benchmark-json
+cargo run --release -p rapidocr-cli -- --image "$env:RAPIDOCR_PYTHON_REPO\python\tests\test_files\ch_en_num.jpg" --model-dir models --no-download --warmup 1 --repeat 20 --benchmark-json
 ```
 
 Compare Rust CLI and Python RapidOCR hot-loop timings:
@@ -271,7 +271,26 @@ python .\tools\bench_e2e.py --repeat 20 --image python\tests\test_files\ch_en_nu
 
 Use `--no-cls` to benchmark the pipeline without cls. Use `--out target\benchmark.md` to write measured rows as Markdown.
 
-The benchmark script records model load time, end-to-end hot-loop time, peak RSS when `psutil` is installed, and stage summaries for det/cls/rec. Rust rows also include `det_postprocess_ms` from `OcrTimings`; the Python timing surface does not split DB postprocess separately.
+The script requires Python 3.11+ and the reference package's dependencies. It runs Rust and Python in separate fresh child processes, samples both throughout startup/model load/warm-up/inference when `psutil` is installed, and uses one warm-up call for both before timing. `--warmup 0` disables warm-up. The CLI alone defaults to zero warm-up calls.
+
+Use `--config config\ppocrv5-ch-mobile.toml` to select a shared CPU TOML configuration. The script maps model files, normalization, batch sizes, and inference thread/arena settings to Python. Relative model paths follow `--rs-root`, matching the CLI's working-directory policy. The default selects explicit PP-OCRv6 small files under `--model-dir`, rather than trusting the Python checkout's model defaults. Both session paths disable memory patterns for dynamic OCR models. Rust input resource limits are not applied by Python; compare inputs that fit the Rust limits. The Python reference initializes its classifier even when classification is disabled.
+
+To align the Windows runtime release/distribution, point Rust at the DLL shipped in Python's wheel:
+
+```powershell
+$rapidocrOrtDll = python -c "import pathlib, onnxruntime; print(pathlib.Path(onnxruntime.__file__).parent / 'capi' / 'onnxruntime.dll')"
+python .\tools\bench_e2e.py --ort-dylib $rapidocrOrtDll --repeat 5 --out target\benchmark_rss.md
+```
+
+`--ort-dylib` builds the Rust CLI with `load-dynamic`; the library must implement ONNX Runtime API 1.24+. Python uses its pybind native module, so selecting its wheel's DLL aligns the runtime release/distribution, not the exact native binary. `--rust-binary` can reuse an already built release CLI. Without `--ort-dylib`, the Rust bundled runtime can differ from Python's runtime.
+
+Results record model load time, hot-loop time, output line counts, and det/cls/rec stage summaries. Rust additionally splits `det_postprocess_ms`; Python does not. Memory columns use MiB: `peak_rss_mib` is continuously sampled RSS, `os_peak_rss_mib` is the largest observed Windows OS peak working set, and `peak_private_mib` is sampled Windows Private Bytes. Python's `post_call_rss_mib` retains the old after-call-only reading for diagnosis; it is not a peak measurement. `--sample-interval-ms` defaults to 10 ms, so sampled RSS can miss brief peaks.
+
+Verify the sampler's transient-allocation capture, pipe handling, and optional dependency path:
+
+```powershell
+python -m unittest discover -s tools -p test_bench_e2e.py -v
+```
 
 The curated current baseline is recorded in [../benchmark-baseline.md](../benchmark-baseline.md).
 

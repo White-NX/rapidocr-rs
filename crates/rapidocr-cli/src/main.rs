@@ -70,6 +70,10 @@ struct Args {
     #[arg(long, default_value_t = 1)]
     repeat: usize,
 
+    /// Untimed inferences before the measured loop (zero preserves normal CLI behavior).
+    #[arg(long, default_value_t = 0)]
+    warmup: usize,
+
     #[arg(long)]
     quiet: bool,
 
@@ -156,6 +160,9 @@ fn main() -> Result<()> {
         RapidOcr::new(cfg)?
     };
     let model_load_ms = model_load_start.elapsed().as_secs_f64() * 1000.0;
+    for _ in 0..args.warmup {
+        ocr.run_path(image)?;
+    }
     let repeat = args.repeat.max(1);
     let mut elapsed = Vec::with_capacity(repeat);
     let mut timings = Vec::with_capacity(repeat);
@@ -184,6 +191,7 @@ fn main() -> Result<()> {
     if args.benchmark_json {
         let summary = BenchmarkJson {
             repeat,
+            warmup: args.warmup,
             model_load_ms,
             total_ms,
             mean_ms,
@@ -226,6 +234,7 @@ fn main() -> Result<()> {
 #[derive(Debug, Serialize)]
 struct BenchmarkJson {
     repeat: usize,
+    warmup: usize,
     model_load_ms: f64,
     total_ms: f64,
     mean_ms: f64,
